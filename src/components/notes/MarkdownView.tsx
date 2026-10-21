@@ -25,6 +25,23 @@ function hastText(n: HastNode | undefined): string {
   return (n.children ?? []).map(hastText).join("");
 }
 
+/**
+ * remark-math understands $...$ and $$...$$ only; many models write LaTeX's
+ * \\( ... \\) and \\[ ... \\] instead. Convert them, leaving code untouched.
+ */
+export function normaliseMathDelimiters(md: string): string {
+  return md
+    .split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/)
+    .map((part, i) =>
+      i % 2 === 1
+        ? part
+        : part
+            .replace(/\\\[([\s\S]+?)\\\]/g, (_, m: string) => `\n$$\n${m.trim()}\n$$\n`)
+            .replace(/\\\((.+?)\\\)/g, (_, m: string) => `$${m.trim()}$`),
+    )
+    .join("");
+}
+
 /** Split at "## " headings (outside code fences / display maths) so finished sections don't re-render. */
 export function splitSections(md: string): string[] {
   const lines = md.split("\n");
@@ -154,7 +171,7 @@ const Block = memo(function Block({ md, streaming }: { md: string; streaming: bo
 });
 
 export function MarkdownView({ content, streaming = false, className }: { content: string; streaming?: boolean; className?: string }) {
-  const sections = useMemo(() => splitSections(content), [content]);
+  const sections = useMemo(() => splitSections(normaliseMathDelimiters(content)), [content]);
   return (
     <div className={cn("notes-doc", className)}>
       {sections.map((s, i) => (

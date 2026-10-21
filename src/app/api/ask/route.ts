@@ -43,7 +43,7 @@ export async function POST(req: Request) {
     requireLlm(body.tier);
     if (body.mode === "question" && !body.question.trim()) throw new RequestError("Please type or say a question.");
     const { system, user } = askPrompt(body);
-    return ndjson(req, (signal) => streamBeats({ system, messages: [{ role: "user", content: user }], maxTokens: 3500, tier: body.tier, signal }, 5));
+    return ndjson(req, (signal) => streamBeats({ system, messages: [{ role: "user", content: user }], maxTokens: 3500, tier: body.tier, signal }, 5, ["title", "heading"]));
   } catch (err) {
     return errorResponse(err);
   }

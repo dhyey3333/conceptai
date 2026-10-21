@@ -17,6 +17,10 @@ export interface LlmConfig {
   jsonMode: boolean;
   effort: "low" | "medium" | "high";
   fallbacks: boolean;
+  /** Tokens-per-minute budget of a rate-limited plan (e.g. Groq free tier): requests are sized to fit. */
+  tpmLimit?: number;
+  /** reasoning_effort for OpenAI-compatible reasoning models (gpt-oss): low | medium | high. */
+  reasoningEffort?: string;
 }
 
 const env = (k: string) => {
@@ -76,7 +80,17 @@ function buildConfig(provider: LlmProvider, o: { apiKey?: string; baseUrl?: stri
   // A key is required for hosted APIs; local OpenAI-compatible servers often need none.
   const isLocal = /\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])/.test(baseUrl);
   if (!apiKey && !isLocal) return null;
-  return { provider: "openai", apiKey, baseUrl, model: o.model ?? "gpt-4o-mini", jsonMode, effort, fallbacks: false };
+  return {
+    provider: "openai",
+    apiKey,
+    baseUrl,
+    model: o.model ?? "gpt-4o-mini",
+    jsonMode,
+    effort,
+    fallbacks: false,
+    tpmLimit: Number(env("LLM_TPM_LIMIT")) || undefined,
+    reasoningEffort: env("LLM_REASONING_EFFORT")?.toLowerCase(),
+  };
 }
 
 function bestConfig(): LlmConfig | null {
@@ -105,6 +119,15 @@ function fastConfig(best: LlmConfig): LlmConfig | null {
     };
   }
   return buildConfig(provider, { apiKey: env("LLM_FAST_API_KEY"), baseUrl: env("LLM_FAST_BASE_URL"), model });
+}
+
+/**
+ * Whether lesson parts and notes must be generated one at a time: a local
+ * model can't run two at once, and a rate-limited plan would trip its limit.
+ */
+export function generateSequentially(): boolean {
+  const best = bestConfig();
+  return !!best && (best.provider === "ollama" || !!best.tpmLimit);
 }
 
 export function llmConfig(tier: Tier = "best"): LlmConfig | null {

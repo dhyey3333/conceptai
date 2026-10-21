@@ -259,6 +259,20 @@ ${BOARD_SPEC.split("\n").filter((l) => /figure|plot|shape|Figure coordinates|exp
   return { system, user };
 }
 
+/**
+ * Continue notes that stopped at the output limit (common on free plans with a
+ * small per-minute token budget). Only the tail and the headings so far are
+ * sent, so the request stays small enough to fit the same budget.
+ */
+export function notesContinuation(notesSoFar: string): string {
+  const headings = notesSoFar
+    .split("\n")
+    .filter((l) => /^#{1,3}\s/.test(l))
+    .join("\n")
+    .slice(-2500);
+  return `The notes were cut off by the output limit. Headings written so far:\n${headings}\n\nThe notes end with:\n<tail>\n${notesSoFar.slice(-2000)}\n</tail>\n\nContinue exactly where the tail stops (even mid-sentence or mid-equation), in the same structure and formatting, and finish all remaining sections. Do not repeat anything already written and do not restart.`;
+}
+
 export function quizPrompt(input: { topic: string; level: Level; outline?: string; recent?: string; research?: string }) {
   const system = `You are an expert examiner creating practice questions for ${LEVEL_TEXT[input.level]}
 Return only a JSON object, no prose:

@@ -24,6 +24,8 @@ export interface GenOptions {
   signal?: AbortSignal;
   /** Which model tier answers: "fast" for easy material, "best" (default) for hard. */
   tier?: Tier;
+  /** Told why generation ended; "length" means the output hit its token limit. */
+  onStop?: (reason: "length" | "end") => void;
 }
 
 export class LlmError extends Error {
@@ -133,6 +135,7 @@ async function* streamAnthropic(cfg: LlmConfig, opts: GenOptions): AsyncGenerato
     if (final.stop_reason === "refusal") {
       throw new LlmError("The model declined this request. Try rephrasing the topic.", 422, "refusal");
     }
+    opts.onStop?.(final.stop_reason === "max_tokens" ? "length" : "end");
   } catch (err) {
     throw claudeError(err, cfg);
   }
@@ -159,22 +162,67 @@ async function* lines(body: ReadableStream<Uint8Array>): AsyncGenerator<string> 
   if (buf.trim()) yield buf;
 }
 
-async function upstream(url: string, init: RequestInit, label: string): Promise<Response> {
+/** Retry-After as milliseconds (seconds or an HTTP date); null when absent or unreadable. */
+export function retryAfterMs(header: string | null): number | null {
+  if (!header) return null;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const at = Date.parse(header);
+  return Number.isFinite(at) ? Math.max(0, at - Date.now()) : null;
+}
+
+function sleep(ms: number, signal?: AbortSignal | null): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(t);
+        reject(new LlmError("Request cancelled.", 499, "aborted"));
+      },
+      { once: true },
+    );
+  });
+}
+
+/**
+ * Keep prompt + requested output inside a per-minute token budget. Free
+ * tiers such as Groq's (8K tokens/minute) reject or throttle requests that
+ * can't fit, so long outputs (notes) are capped rather than failing.
+ */
+export function fitToBudget(opts: Pick<GenOptions, "system" | "messages" | "maxTokens">, tpmLimit?: number): number {
+  if (!tpmLimit) return opts.maxTokens;
+  const chars = opts.system.length + opts.messages.reduce((n, m) => n + m.content.length, 0);
+  const inputTokens = Math.ceil(chars / 3.5);
+  return Math.max(512, Math.min(opts.maxTokens, tpmLimit - inputTokens - 256));
+}
+
+async function upstream(url: string, init: RequestInit, label: string, retries = 2): Promise<Response> {
   let res: Response;
-  try {
-    res = await fetch(url, init);
-  } catch (err) {
-    if ((err as Error).name === "AbortError") throw new LlmError("Request cancelled.", 499, "aborted");
-    throw new LlmError(`Couldn't reach ${label} at ${new URL(url).origin}.`, 502, "network");
+  for (let attempt = 0; ; attempt++) {
+    try {
+      res = await fetch(url, init);
+    } catch (err) {
+      if ((err as Error).name === "AbortError") throw new LlmError("Request cancelled.", 499, "aborted");
+      throw new LlmError(`Couldn't reach ${label} at ${new URL(url).origin}.`, 502, "network");
+    }
+    // Rate limited: wait as long as the server asks (up to a minute), then try again.
+    const wait = res.status === 429 ? retryAfterMs(res.headers.get("retry-after")) : null;
+    if (wait === null || wait > 65_000 || attempt >= retries) break;
+    await res.body?.cancel().catch(() => {});
+    await sleep(wait + 250, init.signal);
   }
   if (!res.ok || !res.body) {
     const detail = (await res.text().catch(() => "")).slice(0, 300);
-    const status = res.status === 401 || res.status === 403 ? 401 : res.status === 429 ? 429 : res.status === 404 ? 404 : 502;
+    const status =
+      res.status === 401 || res.status === 403 ? 401 : res.status === 429 ? 429 : res.status === 404 ? 404 : res.status === 413 ? 413 : 502;
     const msg =
       status === 401
         ? `${label} rejected the API key.`
         : status === 429
-          ? `${label} rate limit reached. Try again shortly.`
+          ? `${label} rate limit reached (free plans allow only so many tokens per minute and per day). Try again shortly.`
+          : status === 413
+            ? `${label}: this request is larger than your plan's per-minute token limit. Set LLM_TPM_LIMIT in .env.local to that limit.`
           : status === 404
             ? `${label}: model or endpoint not found. ${detail}`
             : `${label} error ${res.status}. ${detail}`;
@@ -194,9 +242,11 @@ async function* streamOpenAi(cfg: LlmConfig, opts: GenOptions): AsyncGenerator<s
     stream: true,
     messages: [{ role: "system", content: opts.system }, ...opts.messages],
     // Newer OpenAI models only accept max_completion_tokens; most other servers want max_tokens.
-    [isOpenAi ? "max_completion_tokens" : "max_tokens"]: opts.maxTokens,
+    [isOpenAi ? "max_completion_tokens" : "max_tokens"]: fitToBudget(opts, cfg.tpmLimit),
   };
   if (!isOpenAi) body.temperature = 0.5;
+  if (cfg.reasoningEffort) body.reasoning_effort = cfg.reasoningEffort;
+  let stopReason: "length" | "end" = "end";
   if (opts.json && cfg.jsonMode) body.response_format = { type: "json_object" };
   const res = await upstream(
     `${cfg.baseUrl}/chat/completions`,
@@ -211,16 +261,19 @@ async function* streamOpenAi(cfg: LlmConfig, opts: GenOptions): AsyncGenerator<s
   for await (const line of lines(res.body!)) {
     if (!line.startsWith("data:")) continue;
     const data = line.slice(5).trim();
-    if (data === "[DONE]") return;
+    if (data === "[DONE]") break;
     try {
       const j = JSON.parse(data);
       const text = j.choices?.[0]?.delta?.content;
       if (typeof text === "string" && text) yield text;
+      const finish = j.choices?.[0]?.finish_reason;
+      if (finish) stopReason = finish === "length" ? "length" : "end";
       if (j.error) throw new LlmError(String(j.error.message ?? "Upstream error"), 502, "upstream");
     } catch (e) {
       if (e instanceof LlmError) throw e;
     }
   }
+  opts.onStop?.(stopReason);
 }
 
 // ---------------------------------------------------------------------------
@@ -266,7 +319,10 @@ async function* streamOllama(cfg: LlmConfig, opts: GenOptions): AsyncGenerator<s
       if (j.error) throw new LlmError(`Ollama: ${j.error}`, 502, "upstream");
       const text = j.message?.content;
       if (typeof text === "string" && text) yield text;
-      if (j.done) return;
+      if (j.done) {
+        opts.onStop?.(j.done_reason === "length" ? "length" : "end");
+        return;
+      }
     } catch (e) {
       if (e instanceof LlmError) throw e;
     }

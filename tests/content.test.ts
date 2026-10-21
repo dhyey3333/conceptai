@@ -85,3 +85,27 @@ describe("splitSections", () => {
     expect(parts[2].startsWith("## B")).toBe(true);
   });
 });
+
+describe("normaliseMathDelimiters", () => {
+  it("turns \\[ \\] and \\( \\) into $$ and $, but leaves code alone", async () => {
+    const { normaliseMathDelimiters } = await import("@/components/notes/MarkdownView");
+    const md = "Energy \\(E=mc^2\\) and\n\\[ X[k]=\\sum_n x[n] \\]\n`\\(code\\)`\n```\n\\[raw\\]\n```";
+    const out = normaliseMathDelimiters(md);
+    expect(out).toContain("Energy $E=mc^2$ and");
+    expect(out).toContain("$$\nX[k]=\\sum_n x[n]\n$$");
+    expect(out).toContain("`\\(code\\)`");
+    expect(out).toContain("```\n\\[raw\\]\n```");
+  });
+});
+
+describe("notesContinuation", () => {
+  it("sends only headings and the tail, and asks to continue without repeating", async () => {
+    const { notesContinuation } = await import("@/lib/server/prompts");
+    const notes = "# T\n## 1. Key Definitions\n" + "x".repeat(20000) + "\n## 10. Important Questions\nThe derivation of X[k] = ";
+    const p = notesContinuation(notes);
+    expect(p).toContain("## 1. Key Definitions");
+    expect(p).toContain("The derivation of X[k] = ");
+    expect(p.length).toBeLessThan(5500);
+    expect(p).toMatch(/do not repeat/i);
+  });
+});

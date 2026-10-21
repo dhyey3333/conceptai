@@ -75,6 +75,8 @@ export interface ServerStatus {
     /** cheaper model for easy topics, when different from the main one */
     fast?: { provider: string; model: string };
     research?: "web" | "wikipedia" | "off";
+    /** generate one request at a time (local model or rate-limited plan) */
+    sequential?: boolean;
   };
   tts: { configured: boolean; provider?: string };
   stt: { configured: boolean };

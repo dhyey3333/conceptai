@@ -41,7 +41,10 @@ All keys are read **only on the server** (`src/lib/server/env.ts`). The browser 
 |---|---|
 | **Claude** (official Anthropic SDK; default model `claude-opus-5-5`) | `LLM_PROVIDER=anthropic`<br>`LLM_API_KEY=sk-ant-...` |
 | **Ollama** (local, free) | `LLM_PROVIDER=ollama`<br>`LLM_MODEL=qwen3-vl:4b-instruct` (or any model you've pulled)<br>`OLLAMA_NUM_CTX=8192` (optional; keep it small on 4-8 GB GPUs so the model stays on the GPU) |
-| **Any OpenAI-compatible API** (OpenAI, Groq, OpenRouter, Together, vLLM, LM Studio) | `LLM_PROVIDER=openai`<br>`LLM_BASE_URL=https://api.groq.com/openai/v1`<br>`LLM_API_KEY=...`<br>`LLM_MODEL=llama-3.3-70b-versatile` |
+| **Groq** (free tier) | `LLM_PROVIDER=openai`<br>`LLM_BASE_URL=https://api.groq.com/openai/v1`<br>`LLM_API_KEY=gsk_...`<br>`LLM_MODEL=openai/gpt-oss-120b`<br>`LLM_JSON_MODE=false`<br>`LLM_TPM_LIMIT=8000`<br>`LLM_REASONING_EFFORT=low` |
+| **Any other OpenAI-compatible API** (OpenAI, OpenRouter, Together, vLLM, LM Studio) | `LLM_PROVIDER=openai`<br>`LLM_BASE_URL=...`<br>`LLM_API_KEY=...`<br>`LLM_MODEL=...` |
+
+On rate-limited plans set `LLM_TPM_LIMIT` to the plan's tokens-per-minute: each request is sized to fit it, a 429 is retried after the server's `Retry-After`, and lesson parts and notes are generated one at a time instead of in parallel. Groq's free tier also caps tokens per day (about 200K for gpt-oss-120b), which is roughly 4–6 lessons with notes.
 
 Claude requests enable Anthropic's server-side refusal **fallbacks** (`fallbacks: "default"`, beta `server-side-fallback-2026-07-01`) so a rare safety decline is retried on the recommended fallback model; set `ANTHROPIC_FALLBACKS=off` if you route through a proxy that rejects it. `ANTHROPIC_EFFORT` (low/medium/high) trades depth for speed.
 

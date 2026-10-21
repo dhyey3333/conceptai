@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { chooseTier } from "@/lib/lesson/routing";
 import { requireLlm, streamText } from "@/lib/server/llm";
-import { notesPrompt } from "@/lib/server/prompts";
+import { notesContinuation, notesPrompt } from "@/lib/server/prompts";
 import { errorResponse, LevelSchema, ndjson, rateLimit, readJson, ResearchTextSchema, TierSchema, TopicSchema } from "@/lib/server/http";
 
 const Body = z.object({
@@ -30,12 +30,25 @@ export async function POST(req: Request) {
     requireLlm(tier);
     const { system, user } = notesPrompt(body);
     return ndjson(req, async function* (signal) {
-      let chars = 0;
-      for await (const text of streamText({ system, messages: [{ role: "user", content: user }], maxTokens: 14000, tier, signal })) {
-        chars += text.length;
-        yield { type: "text", text };
+      let notes = "";
+      // When the output hits its token limit, ask for the rest (a few times at most).
+      for (let part = 0; part < 4; part++) {
+        let stop = "end" as "length" | "end";
+        const content = part === 0 ? user : `${user}\n\n${notesContinuation(notes)}`;
+        for await (const text of streamText({
+          system,
+          messages: [{ role: "user", content }],
+          maxTokens: 14000,
+          tier,
+          signal,
+          onStop: (r) => (stop = r),
+        })) {
+          notes += text;
+          yield { type: "text", text };
+        }
+        if (stop !== "length") break;
       }
-      yield { type: "done", chars };
+      yield { type: "done", chars: notes.length };
     });
   } catch (err) {
     return errorResponse(err);

@@ -105,6 +105,7 @@ function LessonView({ lesson, status, autostart }: { lesson: Lesson; status: Ser
     const sess = new LessonSession(lesson, {
       llm,
       llmProvider: status.llm.provider,
+      sequential: status.llm.sequential,
       tts: status.tts.configured,
       settings,
     });

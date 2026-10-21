@@ -64,6 +64,8 @@ export interface SessionState {
 export interface SessionEnv {
   llm: boolean;
   llmProvider?: string;
+  /** One generation at a time (local model, or a rate-limited free plan). */
+  sequential?: boolean;
   tts: boolean;
   settings: Settings;
 }
@@ -231,8 +233,9 @@ export class LessonSession {
         const ok = await this.generateSection(i);
         if (!ok) return;
         // Notes generate alongside the lesson (after the first section, so the
-        // lesson starts fast). A local model can't do both at once, so wait.
-        if (i === 0 && this.env.llmProvider !== "ollama") this.maybeStartNotes();
+        // lesson starts fast). A local model or a rate-limited plan can't do
+        // both at once, so then they wait for the whole lesson.
+        if (i === 0 && !this.env.sequential) this.maybeStartNotes();
       }
       this.maybeStartNotes();
     } finally {

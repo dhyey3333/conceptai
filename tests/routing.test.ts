@@ -119,3 +119,23 @@ describe("research helpers", () => {
     expect(wikiUrl("Ohm's law")).toBe("https://en.wikipedia.org/wiki/Ohm's_law");
   });
 });
+
+describe("rate-limited plans", () => {
+  it("caps output so prompt + output fit the per-minute budget", async () => {
+    const { fitToBudget } = await import("@/lib/server/llm");
+    const opts = { system: "x".repeat(7000), messages: [{ role: "user" as const, content: "y".repeat(3500) }], maxTokens: 14000 };
+    expect(fitToBudget(opts)).toBe(14000); // no limit configured
+    expect(fitToBudget(opts, 8000)).toBe(8000 - 3000 - 256); // ~3000 input tokens
+    expect(fitToBudget({ ...opts, maxTokens: 2000 }, 8000)).toBe(2000); // already small enough
+    expect(fitToBudget({ ...opts, system: "x".repeat(40000) }, 8000)).toBe(512); // never below a usable floor
+  });
+
+  it("reads Retry-After as seconds or a date", async () => {
+    const { retryAfterMs } = await import("@/lib/server/llm");
+    expect(retryAfterMs("7")).toBe(7000);
+    expect(retryAfterMs(null)).toBeNull();
+    expect(retryAfterMs("soon")).toBeNull();
+    const at = new Date(Date.now() + 5000).toUTCString();
+    expect(retryAfterMs(at)).toBeGreaterThan(3000);
+  });
+});
