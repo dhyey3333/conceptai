@@ -218,6 +218,8 @@ body {
 
 .b-steps {
   font-size: 27px;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 .b-step {
   display: flex;

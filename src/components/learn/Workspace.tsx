@@ -143,9 +143,11 @@ function LessonView({ lesson, status, autostart }: { lesson: Lesson; status: Ser
     listenRef.current = startListening({
       language: session.getSnapshot().lesson.language,
       useServer: status.stt.configured,
+      hint: session.getSnapshot().lesson.outline?.title ?? session.getSnapshot().lesson.topic,
       onInterim: (t) => session.setInterim(t),
       onFinal: (t) => (heard = t),
       onError: (m) => setToast(m),
+      onNotice: (m) => setToast(m),
       onEnd: () => {
         listenRef.current = null;
         if (heard && !llm) {
@@ -196,6 +198,12 @@ function LessonView({ lesson, status, autostart }: { lesson: Lesson; status: Ser
   const liveSection = s.timeline[Math.min(s.index, s.timeline.length - 1)]?.sectionId;
   const viewingOther = !!s.viewSection && s.viewSection !== liveSection;
   const generatingIdx = sections.findIndex((x) => l.sections[x.id]?.status === "loading");
+  const checkingIdx = sections.findIndex((x) => l.sections[x.id]?.phase === "checking");
+  const readyParts = sections.filter((x) => l.sections[x.id]?.status === "ready");
+  const allChecked = readyParts.length > 0 && readyParts.every((x) => l.sections[x.id]?.checked);
+  // Taught while the checker was unavailable (e.g. by the local stand-in); checked automatically later.
+  const uncheckedParts = readyParts.filter((x) => l.sections[x.id]?.checked === false && !l.sections[x.id]?.phase).length;
+  const totalFixes = readyParts.reduce((n, x) => n + (l.sections[x.id]?.fixes ?? 0), 0);
   const selected = entries.find((e) => e.key === selectedKey);
   const researching = l.research?.status === "running";
 
@@ -373,6 +381,22 @@ function LessonView({ lesson, status, autostart }: { lesson: Lesson; status: Ser
                 {modelLabel(l.model)}
               </span>
             )}
+            {uncheckedParts > 0 && checkingIdx < 0 && (
+              <span
+                className="hidden shrink-0 rounded-md bg-warn/15 px-1.5 py-0.5 text-[11px] text-warn sm:inline"
+                title="These parts were taught while the fact-checker was unavailable. They are checked automatically once it is back, and any correction is applied (and said out loud if you already heard that part)."
+              >
+                {uncheckedParts} part{uncheckedParts === 1 ? "" : "s"} not fact-checked yet
+              </span>
+            )}
+            {allChecked && (
+              <span
+                className="hidden shrink-0 rounded-md bg-ok/15 px-1.5 py-0.5 text-[11px] text-ok sm:inline"
+                title="Every part was reviewed by a second, examiner-style pass; corrections replace the original, and anything you already heard is corrected out loud"
+              >
+                Fact-checked{totalFixes ? ` · ${totalFixes} fix${totalFixes === 1 ? "" : "es"}` : ""}
+              </span>
+            )}
             {l.research?.status === "done" && (
               <button
                 onClick={() => setTab("outline")}
@@ -392,9 +416,11 @@ function LessonView({ lesson, status, autostart }: { lesson: Lesson; status: Ser
               <>
                 <Spinner size={12} /> Planning the lesson…
               </>
-            ) : generatingIdx >= 0 ? (
+            ) : generatingIdx >= 0 || checkingIdx >= 0 ? (
               <>
-                <Spinner size={12} /> Writing part {generatingIdx + 1} of {sections.length} while you learn
+                <Spinner size={12} /> {generatingIdx >= 0 ? "Writing" : "Fact-checking"} part {(generatingIdx >= 0 ? generatingIdx : checkingIdx) + 1} of{" "}
+                {sections.length}
+                {s.timeline.length ? " while you learn" : ""}
               </>
             ) : s.phase === "buffering" && s.asking ? (
               <>
@@ -402,7 +428,7 @@ function LessonView({ lesson, status, autostart }: { lesson: Lesson; status: Ser
               </>
             ) : sections.length ? (
               <>
-                {s.timeline.length} steps · {sections.length} parts
+                {s.timeline.length} steps · {readyParts.length < sections.length ? `${readyParts.length} of ${sections.length} parts ready, the rest are written as you go` : `${sections.length} parts`}
                 {s.phase === "ended" ? " · finished" : ""}
               </>
             ) : null}

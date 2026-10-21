@@ -38,6 +38,10 @@ export function itemWeight(item: BoardItem): number {
       return 0.6 + 0.35 * item.shapes.length;
     case "plot":
       return 1.6 + 0.9 * (item.functions?.length ?? 0) + 0.1 * (item.points?.length ?? 0);
+    case "tree":
+      return 0.6 + 0.4 * item.nodes.length;
+    case "array":
+      return 0.6 + 0.14 * item.values.length + 0.35 * (item.pointers?.length ?? 0);
   }
 }
 

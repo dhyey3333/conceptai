@@ -135,22 +135,6 @@ export function PlotItem({ item, timing, width }: { item: ItemOf<"plot">; timing
         <line x1={ox} y1={H - M.b + 4} x2={ox} y2={M.t - 6} stroke="var(--ink-white)" strokeWidth={2} pathLength={1} className="draw" style={vars(axesD)} />
         <polygon points={`${W - M.r + 10},${oy} ${W - M.r},${oy - 5} ${W - M.r},${oy + 5}`} fill="var(--ink-white)" className="fade" style={vars(gridD)} />
         <polygon points={`${ox},${M.t - 12} ${ox - 5},${M.t - 2} ${ox + 5},${M.t - 2}`} fill="var(--ink-white)" className="fade" style={vars(gridD)} />
-        <g className="fade" style={vars(gridD)} fill="var(--ink-muted)" fontSize={14} fontFamily="var(--font-sans)">
-          {model.xTicks.map((v) =>
-            Math.abs(v - model.axisX) < 1e-9 && model.axisX !== item.xMin ? null : (
-              <text key={`tx${v}`} x={xs(v)} y={Math.min(H - M.b + 18, oy + 18)} textAnchor="middle">
-                {fmt(v)}
-              </text>
-            ),
-          )}
-          {model.yTicks.map((v) =>
-            Math.abs(v - model.axisY) < 1e-9 ? null : (
-              <text key={`ty${v}`} x={Math.max(M.l - 8, ox - 8)} y={ys(v) + 5} textAnchor="end">
-                {fmt(v)}
-              </text>
-            ),
-          )}
-        </g>
         <g clipPath={`url(#${clipId})`}>
           {model.paths.map((p, i) => (
             <path
@@ -166,6 +150,33 @@ export function PlotItem({ item, timing, width }: { item: ItemOf<"plot">; timing
               style={vars({ "--d0": ms(t0 + dur * 0.25 + i * curveSlot), "--dd": ms(curveSlot) })}
             />
           ))}
+        </g>
+        {/* Tick numbers sit above the curves, with a halo in the board colour so a curve never hides them. */}
+        <g
+          className="fade"
+          style={vars(gridD)}
+          fill="var(--ink-muted)"
+          fontSize={14}
+          fontFamily="var(--font-sans)"
+          stroke="var(--board-bg)"
+          strokeWidth={4}
+          strokeLinejoin="round"
+          paintOrder="stroke"
+        >
+          {model.xTicks.map((v) =>
+            Math.abs(v - model.axisX) < 1e-9 && model.axisX !== item.xMin ? null : (
+              <text key={`tx${v}`} x={xs(v)} y={Math.min(H - M.b + 18, oy + 18)} textAnchor="middle">
+                {fmt(v)}
+              </text>
+            ),
+          )}
+          {model.yTicks.map((v) =>
+            Math.abs(v - model.axisY) < 1e-9 ? null : (
+              <text key={`ty${v}`} x={Math.max(M.l - 8, ox - 8)} y={ys(v) + 5} textAnchor="end">
+                {fmt(v)}
+              </text>
+            ),
+          )}
         </g>
         {(item.points ?? []).map((pt, i) => (
           <circle

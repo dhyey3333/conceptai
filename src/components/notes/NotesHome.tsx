@@ -61,7 +61,7 @@ export function NotesHome() {
     setBusy(true);
     const now = Date.now();
     const title = topic.trim() || sources[0]?.name.replace(/\.[^.]+$/, "") || "Notes";
-    const sourceText = sources.length ? sources.map((s) => `### ${s.name}\n${s.text}`).join("\n\n").slice(0, 60_000) : undefined;
+    const sourceText = sources.length ? sources.map((s) => `### ${s.name}\n${s.text}`).join("\n\n").slice(0, 400_000) : undefined;
     // Look the topic up first (College/Advanced, or when asked); never block the notes on it.
     let research: { brief: string; sources: WebSource[] } | undefined;
     if (researchMode !== "off" && shouldResearch(researchPref, level) && topic.trim()) {

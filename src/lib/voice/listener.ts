@@ -5,6 +5,9 @@
  *   MediaRecorder and stop automatically after ~1.4 s of silence, detected
  *   from the microphone level (a simple energy-based voice activity detector).
  * - Otherwise the browser's SpeechRecognition (Chrome, Edge, Safari).
+ * - If the server's speech-to-text fails (its limit is reached, or it can't be
+ *   reached), switch to the browser's recognition on the spot, ask the student
+ *   to say it again, and keep using it until the limit should have reset.
  */
 
 interface RecognitionLike {
@@ -39,6 +42,18 @@ export interface ListenCallbacks {
   onFinal: (text: string) => void;
   onError: (message: string) => void;
   onEnd: () => void;
+  /** Told when listening switches to the browser's recognition (and why). */
+  onNotice?: (message: string) => void;
+}
+
+/** Until when the server's speech-to-text is considered unavailable (its limit, or unreachable). */
+let serverDownUntil = 0;
+
+/** Why a transcription failure means "use the browser instead": the service, not the recording, failed. */
+function serviceDownFor(status: number | null, retryAfterMs?: number): number | null {
+  if (status === null || status === 503 || status === 502 || status === 500) return 2 * 60_000;
+  if (status === 429) return Math.min(60 * 60_000, Math.max(60_000, retryAfterMs ?? 10 * 60_000));
+  return null;
 }
 
 export interface ListenSession {
@@ -50,8 +65,15 @@ export interface ListenSession {
 
 export const LANG_CODES = { english: "en-IN", hinglish: "en-IN", hindi: "hi-IN" } as const;
 
-export function startListening(opts: { language: keyof typeof LANG_CODES; useServer: boolean } & ListenCallbacks): ListenSession {
-  if (opts.useServer && recorderAvailable()) return recordAndTranscribe(opts);
+export function startListening(
+  opts: { language: keyof typeof LANG_CODES; useServer: boolean; hint?: string } & ListenCallbacks,
+): ListenSession {
+  // While the server's speech-to-text is down, use the browser's (if it has one; otherwise try the server anyway).
+  if (opts.useServer && recorderAvailable() && (Date.now() >= serverDownUntil || !recognitionCtor())) return recordAndTranscribe(opts);
+  return browserRecognition(opts);
+}
+
+function browserRecognition(opts: { language: keyof typeof LANG_CODES } & ListenCallbacks): ListenSession {
   const Ctor = recognitionCtor();
   if (!Ctor) {
     opts.onError("Voice input isn't supported in this browser. Type your question instead.");
@@ -103,9 +125,11 @@ export function startListening(opts: { language: keyof typeof LANG_CODES; useSer
   };
 }
 
-function recordAndTranscribe(opts: { language: keyof typeof LANG_CODES } & ListenCallbacks): ListenSession {
+function recordAndTranscribe(opts: { language: keyof typeof LANG_CODES; hint?: string } & ListenCallbacks): ListenSession {
   let stopped = false;
   let cancelled = false;
+  /** The browser's recognition, once it has taken over from a failed server transcription. */
+  let fallback: ListenSession | null = null;
   let recorder: MediaRecorder | null = null;
   let stream: MediaStream | null = null;
   let ctx: AudioContext | null = null;
@@ -150,11 +174,31 @@ function recordAndTranscribe(opts: { language: keyof typeof LANG_CODES } & Liste
       try {
         const fd = new FormData();
         fd.append("audio", new Blob(chunks, { type: recorder!.mimeType || "audio/webm" }));
-        fd.append("language", opts.language === "hindi" ? "hi" : "");
-        const res = await fetch("/api/stt", { method: "POST", body: fd });
-        const data = (await res.json()) as { text?: string; message?: string };
-        if (!res.ok) throw new Error(data.message ?? "Transcription failed.");
-        if (data.text) opts.onFinal(data.text);
+        // English is pinned for accuracy; Hinglish is left to auto-detect so mixed speech isn't forced.
+        fd.append("language", opts.language === "hindi" ? "hi" : opts.language === "english" ? "en" : "");
+        if (opts.hint) fd.append("hint", opts.hint);
+        let res: Response | null = null;
+        let data: { text?: string; message?: string; retryAfterMs?: number } = {};
+        try {
+          res = await fetch("/api/stt", { method: "POST", body: fd });
+          data = await res.json();
+        } catch {
+          res = null;
+        }
+        if (res?.ok) {
+          if (data.text) opts.onFinal(data.text);
+        } else {
+          const downFor = serviceDownFor(res ? res.status : null, data.retryAfterMs);
+          // The service failed, not the recording: let the browser listen instead, right away.
+          if (downFor && recognitionCtor() && !cancelled) {
+            serverDownUntil = Date.now() + downFor;
+            opts.onNotice?.("AI speech recognition is unavailable for now, so your browser's is listening instead. Please say that again.");
+            opts.onInterim("Please say that again…");
+            fallback = browserRecognition(opts);
+            return;
+          }
+          opts.onError(data.message ?? (res ? "Transcription failed." : "Couldn't reach the server to transcribe."));
+        }
       } catch (e) {
         opts.onError(e instanceof Error ? e.message : "Transcription failed.");
       }
@@ -189,10 +233,11 @@ function recordAndTranscribe(opts: { language: keyof typeof LANG_CODES } & Liste
   })();
 
   return {
-    stop,
+    stop: () => (fallback ? fallback.stop() : stop()),
     cancel: () => {
       cancelled = true;
-      stop();
+      if (fallback) fallback.cancel();
+      else stop();
     },
   };
 }

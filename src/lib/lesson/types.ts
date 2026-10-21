@@ -6,7 +6,8 @@ export type { ResearchPref, Tier, TierPref };
 
 export type Level = "school" | "senior" | "college" | "advanced";
 export type Language = "english" | "hinglish" | "hindi";
-export type Depth = "quick" | "standard" | "deep";
+/** "full": every page of the attached material, as many parts as it takes. */
+export type Depth = "quick" | "standard" | "deep" | "full";
 export type AskMode = "question" | "simpler" | "example" | "about";
 
 export const LEVELS: { value: Level; label: string; hint: string }[] = [
@@ -26,12 +27,15 @@ export const DEPTHS: { value: Depth; label: string; hint: string }[] = [
   { value: "quick", label: "Quick", hint: "~5 min" },
   { value: "standard", label: "Standard", hint: "~12 min" },
   { value: "deep", label: "Deep dive", hint: "~25 min" },
+  { value: "full", label: "Whole document", hint: "Every topic in the attached file, part by part" },
 ];
 
 export interface OutlineSection {
   id: string;
   title: string;
   goal: string;
+  /** Pages of the uploaded material this part teaches from, e.g. "12-18". */
+  pages?: string;
 }
 
 export interface Outline {
@@ -46,6 +50,11 @@ export interface SectionContent {
   status: "pending" | "loading" | "ready" | "error";
   beats: Beat[];
   error?: string;
+  /** "writing" while beats stream in; "checking" once written, while the fact-check runs. */
+  phase?: "writing" | "checking";
+  /** Whether the fact-check ran, and how many beats it corrected. */
+  checked?: boolean;
+  fixes?: number;
 }
 
 /** A follow-up answer, inserted into the lesson right after the beat it interrupted. */
@@ -58,6 +67,8 @@ export interface QaEntry {
   beats: Beat[];
   status: "loading" | "ready" | "error";
   error?: string;
+  /** "correction": the teacher fixing a beat that had already been played. */
+  kind?: "correction";
   createdAt: number;
 }
 
@@ -124,6 +135,8 @@ export interface Lesson {
   ink: Record<string, Stroke[]>;
   progress: { index: number };
   quiz?: Quiz;
+  /** false: the quiz's answer key hasn't been fact-checked yet (it will be, once the checker is available). */
+  quizChecked?: boolean;
   noteId?: string;
   sample?: boolean;
   createdAt: number;
@@ -156,6 +169,9 @@ export interface Note {
   tier?: Tier;
   status: "generating" | "ready" | "error";
   error?: string;
+  /** false: written while the checker was unavailable; checked automatically later. */
+  checked?: boolean;
+  fixes?: number;
   createdAt: number;
   updatedAt: number;
 }

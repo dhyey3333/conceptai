@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { chooseTier } from "@/lib/lesson/routing";
-import { requireLlm, streamText } from "@/lib/server/llm";
+import { fallbackMessage, requireLlm, sourceBudget, streamText } from "@/lib/server/llm";
 import { notesContinuation, notesPrompt } from "@/lib/server/prompts";
-import { errorResponse, LevelSchema, ndjson, rateLimit, readJson, ResearchTextSchema, TierSchema, TopicSchema } from "@/lib/server/http";
+import { checkNotes, verifyEnabled } from "@/lib/server/verify";
+import { errorResponse, LevelSchema, ndjson, rateLimit, readJson, ResearchTextSchema, SourceSchema, TierSchema, TopicSchema } from "@/lib/server/http";
 
 const Body = z.object({
   topic: TopicSchema,
@@ -12,7 +13,7 @@ const Body = z.object({
     .min(1)
     .max(4),
   outline: z.string().max(6000).optional(),
-  sourceText: z.string().max(60_000).optional(),
+  sourceText: SourceSchema,
   sourceNames: z.array(z.string().max(200)).max(10).optional(),
   tier: TierSchema,
   research: ResearchTextSchema,
@@ -24,17 +25,18 @@ export async function POST(req: Request) {
   const limited = rateLimit(req, "notes", 10);
   if (limited) return limited;
   try {
-    const body = await readJson(req, Body, 160_000);
+    const body = await readJson(req, Body, 1_000_000);
     // Standalone notes have no lesson tier yet: pick one from the level.
     const tier = body.tier ?? chooseTier("auto", body.level);
     requireLlm(tier);
-    const { system, user } = notesPrompt(body);
+    const { system, user } = notesPrompt({ ...body, sourceBudget: sourceBudget(tier, "notes") });
     return ndjson(req, async function* (signal) {
       let notes = "";
       // When the output hits its token limit, ask for the rest (a few times at most).
       for (let part = 0; part < 4; part++) {
         let stop = "end" as "length" | "end";
         const content = part === 0 ? user : `${user}\n\n${notesContinuation(notes)}`;
+        const notices: string[] = [];
         for await (const text of streamText({
           system,
           messages: [{ role: "user", content }],
@@ -42,13 +44,24 @@ export async function POST(req: Request) {
           tier,
           signal,
           onStop: (r) => (stop = r),
+          onFallback: (n) => notices.push(fallbackMessage(n)),
         })) {
+          while (notices.length) yield { type: "notice", message: notices.shift() };
           notes += text;
           yield { type: "text", text };
         }
         if (stop !== "length") break;
       }
-      yield { type: "done", chars: notes.length };
+      if (!verifyEnabled() || !notes.trim()) {
+        yield { type: "done", chars: notes.length };
+        return;
+      }
+      // The notes are already on screen; the check replaces them with a corrected copy if it finds errors.
+      yield { type: "checking" };
+      const subject = { topic: body.topic, level: body.level, research: body.research, context: "These are exam notes with model answers." };
+      const checked = await checkNotes(subject, notes, { tier, signal });
+      if (checked.fixes) yield { type: "replace", text: checked.content };
+      yield { type: "done", chars: checked.content.length, checked: checked.checked, fixes: checked.fixes };
     });
   } catch (err) {
     return errorResponse(err);

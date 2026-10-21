@@ -12,7 +12,7 @@
  *  - persistence of progress, ink, Q&A, quiz and notes links.
  * React reads it through useSyncExternalStore (see useLessonSession).
  */
-import type { BoardItem } from "@/lib/board/schema";
+import type { Beat, BoardItem } from "@/lib/board/schema";
 import { summarizeItems } from "@/lib/board/summary";
 import { allocateTimings, drawBudgetMs, estimateSpeechMs, type ItemTiming } from "@/lib/board/timing";
 import { speakable } from "@/lib/math/render";
@@ -86,6 +86,12 @@ function normalise(lesson: Lesson): Lesson {
   };
 }
 
+/** How often to retry fact-checking content that was taught unchecked. */
+const RECHECK_EVERY_MS = 5 * 60_000;
+/** Lessons with more parts than this (a whole document) are written a few parts ahead of the student. */
+const WRITE_ALL_UP_TO = 8;
+const WRITE_AHEAD = 2;
+
 export class LessonSession {
   private state: SessionState;
   private listeners = new Set<() => void>();
@@ -101,6 +107,12 @@ export class LessonSession {
   private resumeAfterMic = false;
   private speaker: Speaker;
   private env: SessionEnv;
+  private recheckTimer: ReturnType<typeof setInterval> | null = null;
+  private rechecking = false;
+  /** A lesson part is being written right now (re-checks wait, so they don't compete for the rate limit). */
+  private writing = false;
+  /** The server has fact-checking turned off (LLM_VERIFY=off): stop asking. */
+  private recheckOff = false;
 
   constructor(lesson: Lesson, env: SessionEnv) {
     this.env = env;
@@ -128,6 +140,11 @@ export class LessonSession {
       quizLoading: false,
       quizError: null,
     };
+    // Anything taught without a fact-check gets one when the checker is back.
+    if (!l.sample) {
+      this.recheckTimer = setInterval(() => void this.recheck(), RECHECK_EVERY_MS);
+      setTimeout(() => void this.recheck(), 4000);
+    }
   }
 
   // --- store plumbing ------------------------------------------------------
@@ -185,6 +202,7 @@ export class LessonSession {
   }
 
   destroy() {
+    if (this.recheckTimer) clearInterval(this.recheckTimer);
     this.runId++;
     this.clearCurrent();
     this.speaker.stop();
@@ -230,7 +248,16 @@ export class LessonSession {
       for (let i = 0; i < sections.length; i++) {
         if (this.destroyed) return;
         if (this.state.lesson.sections[sections[i].id]?.status === "ready") continue;
+        // A long lesson (a whole document) is written a few parts ahead of the student,
+        // not all at once: no waiting, and a free plan isn't spent on parts never reached.
+        if (sections.length > WRITE_ALL_UP_TO && i > this.studentSection() + WRITE_AHEAD) {
+          if (this.env.sequential) this.maybeStartNotes(); // a quiet moment on a rate-limited plan
+          while (!this.destroyed && i > this.studentSection() + WRITE_AHEAD) await new Promise((r) => setTimeout(r, 1500));
+          if (this.destroyed) return;
+        }
+        this.writing = true;
         const ok = await this.generateSection(i);
+        this.writing = false;
         if (!ok) return;
         // Notes generate alongside the lesson (after the first section, so the
         // lesson starts fast). A local model or a rate-limited plan can't do
@@ -241,7 +268,17 @@ export class LessonSession {
     } finally {
       this.chainRunning = false;
       this.set({});
+      // Parts that couldn't be checked while writing get another go now.
+      setTimeout(() => void this.recheck(), 1500);
     }
+  }
+
+  /** The part the student is on: where playback is, or a later page they're looking at. */
+  private studentSection(): number {
+    const s = this.state;
+    const playing = s.timeline[Math.min(s.index, s.timeline.length - 1)]?.sectionIndex ?? 0;
+    const viewing = s.viewSection ? this.sections.findIndex((x) => x.id === s.viewSection) : -1;
+    return Math.max(playing, viewing);
   }
 
   private track(): AbortController {
@@ -332,14 +369,28 @@ export class LessonSession {
     }
   }
 
-  private async generateSection(i: number): Promise<boolean> {
+  /**
+   * Stream one part. Resolves as soon as the part is fully written (true) or
+   * failed (false), so the next part can be written while this one's
+   * fact-check is still running; corrections keep arriving in the background.
+   */
+  private generateSection(i: number): Promise<boolean> {
+    let written: (ok: boolean) => void = () => {};
+    const done = new Promise<boolean>((resolve) => (written = resolve));
+    void this.streamSection(i, (ok) => written(ok)).then(written);
+    return done;
+  }
+
+  private async streamSection(i: number, onWritten: (ok: boolean) => void, attempt = 0): Promise<boolean> {
     const l = this.state.lesson;
     const outline = l.outline!;
     const id = outline.sections[i].id;
     const patchSection = (s: Lesson["sections"][string]) => this.updateLesson((x) => ({ ...x, sections: { ...x.sections, [id]: s } }));
-    patchSection({ status: "loading", beats: [] });
+    patchSection({ status: "loading", beats: [], phase: "writing" });
     const ctrl = this.track();
     const beats: Lesson["sections"][string]["beats"] = [];
+    let review: { checked?: boolean; fixes?: number } = {};
+    let checking = false;
     try {
       await streamNdjson(
         "/api/lesson/section",
@@ -347,21 +398,50 @@ export class LessonSession {
         (ev) => {
           if (ev.type === "beat") {
             beats.push(ev.beat as (typeof beats)[number]);
-            patchSection({ status: "loading", beats: [...beats] });
+            patchSection({ status: "loading", beats: [...beats], phase: "writing" });
+          } else if (ev.type === "notice") {
+            // A stand-in model took over (e.g. the free plan ran out); say why it may be slower.
+            this.set({ notice: String(ev.message ?? "") || null });
+          } else if (ev.type === "checking") {
+            // Fully written: the lesson may play on into the next part while the check runs.
+            checking = true;
+            patchSection({ status: "ready", beats: [...beats], phase: "checking" });
+            void this.flush(false);
+            onWritten(true);
+          } else if (ev.type === "fix") {
+            const at = Number(ev.index);
+            if (!Number.isInteger(at) || at < 0 || at >= beats.length) return;
+            beats[at] = ev.beat as (typeof beats)[number];
+            this.correctBeat(`${id}:${at}`, beats[at], id, (x) => ({
+              ...x,
+              sections: { ...x.sections, [id]: { ...x.sections[id], beats: [...beats] } },
+            }));
+          } else if (ev.type === "done") {
+            review = { checked: ev.checked === true, fixes: Number(ev.fixes) || 0 };
           }
         },
         ctrl.signal,
       );
       if (!beats.length) throw new ApiError("The model returned no teachable content for this part.");
-      patchSection({ status: "ready", beats: [...beats] });
+      patchSection({ status: "ready", beats: [...beats], phase: undefined, ...review });
       void this.flush(false);
       return true;
     } catch (e) {
       if ((e as Error).name === "AbortError") return false;
       const message = e instanceof Error ? e.message : "Generation failed.";
+      // The part was complete; only its check was lost.
+      if (checking) {
+        patchSection({ status: "ready", beats: [...beats], phase: undefined, checked: false });
+        return true;
+      }
+      // A per-minute rate limit passes (common on free plans): wait, then write the part again.
+      if (e instanceof ApiError && e.code === "rate_limited" && !beats.length && attempt < 3) {
+        await new Promise((r) => setTimeout(r, 20_000 * (attempt + 1)));
+        return this.destroyed ? false : this.streamSection(i, onWritten, attempt + 1);
+      }
       // Keep a usable partial section rather than throwing it away.
       if (beats.length >= 3) {
-        patchSection({ status: "ready", beats: [...beats] });
+        patchSection({ status: "ready", beats: [...beats], phase: undefined });
         this.set({ notice: `Part ${i + 1} was cut short: ${message}` });
         return true;
       }
@@ -369,6 +449,99 @@ export class LessonSession {
       void this.flush(false);
       return false;
     } finally {
+      this.aborts.delete(ctrl);
+    }
+  }
+
+  /**
+   * The fact-check corrected a beat. The board always shows the corrected
+   * version. If the student already heard the old one, the teacher also says
+   * the correction, right after the beat playing now, like a real teacher
+   * would ("A quick correction: ...").
+   */
+  private correctBeat(key: string, fixed: Beat, sectionId: string, replace: (l: Lesson) => Lesson) {
+    const s = this.state;
+    const at = s.timeline.findIndex((t) => t.key === key);
+    const heard = at >= 0 && (at < s.index || (at === s.index && s.beatStarted));
+    const before = at >= 0 ? s.timeline[at].beat.say : "";
+    const saidDifferently = speakable(before).trim() !== speakable(fixed.say).trim();
+    if (!heard || !saidDifferently) return this.updateLesson(replace);
+    const anchorIdx = s.beatStarted ? s.index : s.index - 1;
+    const anchor = s.timeline[anchorIdx];
+    const card = fixed.say.length > 300 ? `${fixed.say.slice(0, 297).replace(/\s+\S*$/, "")}…` : fixed.say;
+    const correction: QaEntry = {
+      id: newId("q"),
+      afterKey: anchor?.key ?? START_KEY,
+      sectionId: anchor?.sectionId ?? sectionId,
+      question: `Correction: ${card}`,
+      mode: "question",
+      kind: "correction",
+      beats: [{ say: `A quick correction to what I said a moment ago. ${fixed.say}`, draw: [] }],
+      status: "ready",
+      createdAt: Date.now(),
+    };
+    this.updateLesson((x) => {
+      const y = replace(x);
+      return { ...y, qa: [...y.qa, correction] };
+    });
+  }
+
+  /**
+   * Fact-check what was taught without a check: parts written by the local
+   * stand-in model, or while the checker was out of quota or offline, and an
+   * unchecked quiz. Runs when the lesson opens and every few minutes, never
+   * while new parts are being written (they'd compete for the same rate
+   * limit). It stops at the first item the checker still can't do and tries
+   * again next time; corrections land like live ones (spoken if already heard).
+   */
+  private async recheck() {
+    if (this.rechecking || this.recheckOff || this.destroyed || this.writing || !this.env.llm) return;
+    const l = this.state.lesson;
+    const outline = l.outline;
+    if (!outline || l.sample) return;
+    const parts = outline.sections
+      .map((s, i) => ({ s, i, c: l.sections[s.id] }))
+      .filter(({ c }) => c?.status === "ready" && c.checked === false && !c.phase && c.beats.length > 0);
+    const quiz = l.quiz && l.quizChecked === false ? l.quiz : null;
+    if (!parts.length && !quiz) return;
+    this.rechecking = true;
+    const ctrl = this.track();
+    const ask = <T,>(body: object) =>
+      postJson<T & { checked: boolean; disabled?: boolean }>("/api/check", { topic: l.topic, level: l.level, ...this.grounding(), ...body }, ctrl.signal);
+    try {
+      for (const { s, i, c } of parts) {
+        const r = await ask<{ fixes: { index: number; beat: Beat }[] }>({
+          kind: "beats",
+          context: `Lesson: ${outline.title}. Part ${i + 1}: "${s.title}". Goal: ${s.goal}`,
+          beats: c.beats,
+        });
+        if (r.disabled) return void (this.recheckOff = true);
+        if (!r.checked) return;
+        // Skip if the part changed while it was being checked; it will be checked again.
+        if (this.state.lesson.sections[s.id]?.beats !== c.beats) continue;
+        const beats = [...c.beats];
+        for (const f of r.fixes) {
+          if (!Number.isInteger(f.index) || f.index < 0 || f.index >= beats.length) continue;
+          beats[f.index] = f.beat;
+          this.correctBeat(`${s.id}:${f.index}`, f.beat, s.id, (x) => ({
+            ...x,
+            sections: { ...x.sections, [s.id]: { ...x.sections[s.id], beats: [...beats] } },
+          }));
+        }
+        this.updateLesson((x) => ({
+          ...x,
+          sections: { ...x.sections, [s.id]: { ...x.sections[s.id], checked: true, fixes: (x.sections[s.id].fixes ?? 0) + r.fixes.length } },
+        }));
+      }
+      if (quiz) {
+        const r = await ask<{ quiz: Quiz }>({ kind: "quiz", topic: l.outline?.title ?? l.topic, quiz });
+        if (r.disabled) return void (this.recheckOff = true);
+        if (r.checked && this.state.lesson.quiz === quiz) this.updateLesson((x) => ({ ...x, quiz: r.quiz, quizChecked: true }), "now");
+      }
+    } catch {
+      // Offline or failing: try again next time.
+    } finally {
+      this.rechecking = false;
       this.aborts.delete(ctrl);
     }
   }
@@ -390,7 +563,9 @@ export class LessonSession {
   private outlineText(): string {
     const o = this.state.lesson.outline;
     if (!o) return "";
-    return o.sections.map((s, i) => `${i + 1}. ${s.title}: ${s.goal}`).join("\n");
+    const full = o.sections.map((s, i) => `${i + 1}. ${s.title}: ${s.goal}`).join("\n");
+    // Notes and quizzes take at most 6,000 characters of outline: a long lesson sends its part titles.
+    return (full.length <= 5800 ? full : o.sections.map((s, i) => `${i + 1}. ${s.title}`).join("\n")).slice(0, 5800);
   }
 
   private maybeStartNotes() {
@@ -448,7 +623,7 @@ export class LessonSession {
         .filter(Boolean)
         .join(" ")
         .slice(0, 7000);
-      const { quiz } = await postJson<{ quiz: Quiz }>(
+      const { quiz, checked } = await postJson<{ quiz: Quiz; checked?: boolean }>(
         "/api/quiz",
         {
           topic: l.outline?.title ?? l.topic,
@@ -459,7 +634,7 @@ export class LessonSession {
         },
         ctrl.signal,
       );
-      this.updateLesson((x) => ({ ...x, quiz }), "now");
+      this.updateLesson((x) => ({ ...x, quiz, quizChecked: checked === true }), "now");
       this.set({ quizLoading: false });
     } catch (e) {
       if ((e as Error).name !== "AbortError") this.set({ quizLoading: false, quizError: e instanceof Error ? e.message : "Couldn't make questions." });
@@ -749,7 +924,11 @@ export class LessonSession {
       title: (l.outline?.title ?? l.topic).slice(0, 200),
       level: l.level,
       language: l.language,
-      outline: (l.outline?.sections ?? []).map((x) => x.title.slice(0, 200)),
+      // At most 10 titles: the parts around the one being asked about.
+      outline: (l.outline?.sections ?? [])
+        .map((x) => x.title.slice(0, 200))
+        .slice(Math.max(0, (l.outline?.sections.findIndex((x) => x.id === sectionId) ?? 0) - 4))
+        .slice(0, 10),
       currentSection: l.outline?.sections.find((x) => x.id === sectionId)?.title,
       recentNarration: recent,
       board,
@@ -852,21 +1031,45 @@ export class LessonSession {
       }));
     };
 
+    // The answer is complete once written; the fact-check that follows only sends corrections.
+    let written = false;
+    const finish = () => {
+      if (written) return;
+      written = true;
+      patch("ready");
+      this.set({ asking: false });
+      this.answerComplete(qa.id);
+    };
     const ctrl = this.track();
     try {
       await streamNdjson(
         "/api/ask",
         { context, question: question.slice(0, 1000), mode: opts.about ? "about" : mode, about: opts.about?.summary, tier: this.grounding().tier },
         (ev) => {
-          if (ev.type !== "beat") return;
-          beats.push(ev.beat as (typeof beats)[number]);
-          patch("loading");
+          if (ev.type === "beat") {
+            beats.push(ev.beat as (typeof beats)[number]);
+            patch("loading");
+          } else if (ev.type === "notice") {
+            this.set({ notice: String(ev.message ?? "") || null });
+          } else if (ev.type === "checking" && beats.length) {
+            finish();
+          } else if (ev.type === "fix") {
+            const at = Number(ev.index);
+            if (!Number.isInteger(at) || at < 0 || at >= beats.length) return;
+            beats[at] = ev.beat as (typeof beats)[number];
+            if (!onBoard) return patch("ready");
+            const text = beats.map((b) => b.say).filter(Boolean).join(" ");
+            this.correctBeat(`qa:${qa.id}:${at}`, beats[at], sectionId, (x) => ({
+              ...x,
+              qa: x.qa.map((q) => (q.id === qa.id ? { ...q, beats: [...beats] } : q)),
+              chat: x.chat.map((m) => (m.id === teacherMsg.id ? { ...m, text } : m)),
+            }));
+          }
         },
         ctrl.signal,
       );
       if (!beats.length) throw new ApiError("I couldn't come up with an answer. Try asking another way?");
-      patch("ready");
-      this.answerComplete(qa.id);
+      finish();
     } catch (e) {
       if ((e as Error).name === "AbortError") return;
       const message = e instanceof Error ? e.message : "Something went wrong.";
@@ -881,7 +1084,7 @@ export class LessonSession {
         this.stopAfterQa = null;
         if (wasPlaying) this.maybeLeaveBuffering();
         else this.set({ phase: "paused" });
-      } else {
+      } else if (!written) {
         patch(beats.length ? "ready" : "error", message);
         this.answerComplete(qa.id);
       }

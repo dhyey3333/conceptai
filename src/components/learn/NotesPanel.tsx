@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { ExternalLink, NotebookPen } from "lucide-react";
 import type { LessonSession, SessionState } from "@/lib/lesson/session";
 import type { Note } from "@/lib/lesson/types";
-import { settleNote, useLiveNote } from "@/lib/notes/generate";
+import { settleNote, useLiveNote, useNoteRecheck } from "@/lib/notes/generate";
 import { store } from "@/lib/store";
 import { Button, Spinner } from "@/components/ui";
 import { MarkdownView } from "@/components/notes/MarkdownView";
@@ -15,12 +15,13 @@ export function NotesPanel({ s, session, canAsk }: { s: SessionState; session: L
   const noteId = s.lesson.noteId;
   const live = useLiveNote(noteId);
   const [saved, setSaved] = useState<Note | null>(null);
+  useNoteRecheck(noteId);
   const [starting, setStarting] = useState(false);
 
   useEffect(() => {
     if (!noteId) return;
     void store.getNote(noteId).then((n) => setSaved(n ? settleNote(n) : null));
-  }, [noteId, live?.status]);
+  }, [noteId, live?.status, live?.version]);
 
   const content = live?.content ?? saved?.content ?? "";
   const status = live?.status ?? saved?.status;
@@ -59,10 +60,15 @@ export function NotesPanel({ s, session, canAsk }: { s: SessionState; session: L
         <div className="flex items-center gap-2 text-[13px] text-muted">
           {status === "generating" ? (
             <>
-              <Spinner size={14} /> Writing notes as you learn…
+              <Spinner size={14} /> {live?.checking ? "Fact-checking the notes…" : "Writing notes as you learn…"}
+              {live?.notice && !live.checking && <span className="text-[12px] text-subtle">{live.notice}</span>}
             </>
           ) : status === "error" ? (
             <span className="text-danger">{live?.error ?? saved?.error ?? "Generation failed"}</span>
+          ) : saved?.checked === false ? (
+            <span title="Written while the fact-checker was unavailable; checked automatically once it is back.">
+              Notes ready · <span className="text-warn">not fact-checked yet</span>
+            </span>
           ) : (
             "Notes ready"
           )}

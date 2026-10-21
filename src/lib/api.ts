@@ -77,6 +77,10 @@ export interface ServerStatus {
     research?: "web" | "wikipedia" | "off";
     /** generate one request at a time (local model or rate-limited plan) */
     sequential?: boolean;
+    /** model that takes over when the main one can't answer (e.g. a local one) */
+    fallback?: string;
+    /** a setup mistake seen recently (rejected key, unknown model) */
+    problem?: string;
   };
   tts: { configured: boolean; provider?: string };
   stt: { configured: boolean };

@@ -8,7 +8,11 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "launch": "node scripts/launcher.mjs",
+    "stop": "node scripts/launcher.mjs --stop",
+    "shortcuts": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/install-shortcuts.ps1",
+    "icon": "node scripts/windows/make-icon.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.137.0",

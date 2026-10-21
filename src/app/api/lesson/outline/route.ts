@@ -3,7 +3,8 @@ import { cleanText } from "@/lib/board/schema";
 import { extractJsonObject } from "@/lib/stream/jsonObjects";
 import { chooseTier, escalateTier } from "@/lib/lesson/routing";
 import { llmConfig } from "@/lib/server/env";
-import { completeText, isRetriable, LlmError } from "@/lib/server/llm";
+import { completeText, isRetriable, LlmError, sourceBudget } from "@/lib/server/llm";
+import { planParts } from "@/lib/source/document";
 import { outlinePrompt } from "@/lib/server/prompts";
 import {
   DepthSchema,
@@ -38,7 +39,10 @@ function toOutline(raw: unknown, topic: string): { outline: Outline; difficulty?
       const o = (typeof s === "string" ? { title: s } : s) as Record<string, unknown>;
       const title = cleanText(String(o?.title ?? o?.name ?? ""), 120);
       const goal = cleanText(String(o?.goal ?? o?.description ?? o?.summary ?? ""), 400);
-      return title ? { id: `s${i + 1}`, title, goal: goal || title } : null;
+      // Which pages of the uploaded material this part teaches from (when material was attached).
+      const pagesRaw = o?.pages ?? o?.page_range ?? o?.pageRange;
+      const pages = typeof pagesRaw === "string" || typeof pagesRaw === "number" ? cleanText(String(pagesRaw), 30) || undefined : undefined;
+      return title ? { id: `s${i + 1}`, title, goal: goal || title, ...(pages ? { pages } : {}) } : null;
     })
     .filter((s): s is NonNullable<typeof s> => !!s)
     .slice(0, 8);
@@ -67,9 +71,9 @@ export async function POST(req: Request) {
   const limited = rateLimit(req, "outline", 12);
   if (limited) return limited;
   try {
-    const body = await readJson(req, Body, 80_000);
-    const { system, user } = outlinePrompt(body);
+    const body = await readJson(req, Body, 1_000_000);
     const tier = chooseTier(body.tierPref, body.level);
+    const { system, user } = outlinePrompt({ ...body, sourceBudget: sourceBudget(tier, "plan") });
     // One retry: small models occasionally return malformed JSON.
     for (let attempt = 0; attempt < 2; attempt++) {
       let text: string;
@@ -82,6 +86,12 @@ export async function POST(req: Request) {
       const parsed = toOutline(extractJsonObject(text), body.topic);
       if (parsed) {
         const finalTier = escalateTier(body.tierPref, tier, parsed.difficulty);
+        // Whole document: the parts come from the document itself, in order, so every page is
+        // taught however long it is; each part is sized to be read in full by the teaching model.
+        if (body.depth === "full" && body.sourceText?.trim()) {
+          const parts = planParts(body.sourceText, sourceBudget(finalTier, "part"));
+          if (parts.length >= 2) parsed.outline.sections = parts.map((p, i) => ({ id: `s${i + 1}`, ...p }));
+        }
         return Response.json({
           outline: parsed.outline,
           difficulty: parsed.difficulty,

@@ -7,7 +7,8 @@ import { strFromU8, unzipSync } from "fflate";
 
 export const MAX_UPLOAD = 15 * 1024 * 1024;
 const MAX_UNZIPPED_FILE = 25 * 1024 * 1024;
-const MAX_TEXT = 60_000;
+// About 250 pages: the whole of a typical module or deck. Lessons read it through a page map (see lib/source/document).
+const MAX_TEXT = 400_000;
 
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
 
@@ -40,8 +41,10 @@ function unzip(buf: Uint8Array, want: (name: string) => boolean) {
 async function pdfText(buf: Uint8Array): Promise<{ text: string; pages: number }> {
   const { extractText, getDocumentProxy } = await import("unpdf");
   const pdf = await getDocumentProxy(buf);
-  const { totalPages, text } = await extractText(pdf, { mergePages: true });
-  return { text: Array.isArray(text) ? text.join("\n") : text, pages: totalPages };
+  const { totalPages, text } = await extractText(pdf, { mergePages: false });
+  // Mark every page, so lessons can be planned and taught page by page.
+  const pages = Array.isArray(text) ? text : [text];
+  return { text: pages.map((t, i) => `[page ${i + 1}]\n${t.trim()}`).join("\n\n"), pages: totalPages };
 }
 
 function pptxText(buf: Uint8Array): { text: string; pages: number } {

@@ -14,8 +14,37 @@ export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
+const knownCommands = new Map<string, boolean>();
+
+/** Whether KaTeX knows \name (a missing argument is fine; an undefined command is not). */
+function isKatexCommand(name: string): boolean {
+  let known = knownCommands.get(name);
+  if (known === undefined) {
+    try {
+      katex.renderToString(`\\${name}`, { throwOnError: true, strict: "ignore" });
+      known = true;
+    } catch (err) {
+      known = !/undefined control sequence/i.test(err instanceof Error ? err.message : "");
+    }
+    knownCommands.set(name, known);
+  }
+  return known;
+}
+
+/**
+ * Models sometimes escape a backslash twice in JSON, so "\frac" arrives as
+ * "\\frac", which KaTeX reads as a line break followed by the word "frac".
+ * Collapse a double backslash only when what follows is a real command; a
+ * genuine line break before a command has three backslashes and is untouched.
+ */
+export function fixOverEscaped(latex: string): string {
+  if (!latex.includes("\\\\")) return latex;
+  return latex.replace(/(?<!\\)\\\\([a-zA-Z]+)/g, (m, name: string) => (isKatexCommand(name) ? `\\${name}` : m));
+}
+
 /** Render LaTeX to HTML. On a parse error, fall back to the escaped source. */
-export function renderLatex(latex: string, display = false): string {
+export function renderLatex(raw: string, display = false): string {
+  const latex = fixOverEscaped(raw);
   const key = (display ? "D" : "I") + latex;
   const hit = cache.get(key);
   if (hit !== undefined) return hit;
@@ -122,7 +151,7 @@ export function speakable(text: string): string {
 }
 
 function latexToWords(latex: string): string {
-  return latex
+  return fixOverEscaped(latex)
     .replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g, "$1 over $2")
     .replace(/\\sqrt\{([^}]*)\}/g, "root of $1")
     .replace(/\^2\b/g, " squared")

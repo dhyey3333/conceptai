@@ -13,6 +13,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { sanitizeItem } from "@/lib/board/schema";
+import { fixOverEscaped } from "@/lib/math/render";
 import { BoardItemView } from "@/components/board/BoardItemView";
 import { extractJsonObject } from "@/lib/stream/jsonObjects";
 import { cn } from "@/lib/utils";
@@ -35,7 +36,7 @@ export function normaliseMathDelimiters(md: string): string {
     .map((part, i) =>
       i % 2 === 1
         ? part
-        : part
+        : fixOverEscaped(part)
             .replace(/\\\[([\s\S]+?)\\\]/g, (_, m: string) => `\n$$\n${m.trim()}\n$$\n`)
             .replace(/\\\((.+?)\\\)/g, (_, m: string) => `$${m.trim()}$`),
     )
@@ -135,7 +136,7 @@ function makeComponents(streaming: boolean): Components {
         // Models often fence diagrams as ```json or leave the language off; recognise them by content.
         if (!lang || lang === "json") {
           const head = hastText(code).trimStart().slice(0, 200);
-          if (/^\{[\s\S]*"type"\s*:\s*"(figure|plot|flowchart|diagram|graph)"/.test(head)) lang = "diagram";
+          if (/^\{[\s\S]*"type"\s*:\s*"(figure|plot|flowchart|diagram|graph|tree|heap|array)"/.test(head)) lang = "diagram";
           else if (/^(flowchart|graph)\s+(TD|TB|LR|RL|BT)\b|^(sequenceDiagram|classDiagram|mindmap|stateDiagram)/.test(head)) lang = "mermaid";
         }
         if (lang === "mermaid" || lang === "diagram") {

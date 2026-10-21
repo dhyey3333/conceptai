@@ -31,6 +31,16 @@ Other scripts: `npm run build`, `npm start`, `npm test` (unit tests), `npm run t
 
 Requires Node 20.9+.
 
+### Run it like an app (Windows, no terminal)
+
+Run `npm run shortcuts` once. It puts a **ConceptAI** icon on the Desktop and in the Start menu, plus **Stop ConceptAI** in the Start menu. Double-clicking the icon:
+
+- opens the app at http://localhost:3100 if it's already running (instant);
+- otherwise starts it in the background in production mode and shows a "Starting ConceptAI…" page that turns into the app as soon as it answers (about 2 s);
+- if the code changed since the last build, rebuilds it first (about 30 s), so the icon always runs the latest version.
+
+`npm run shortcuts -- -StartWithWindows` also starts it in the background when you sign in (`-NoStartWithWindows` undoes that, `-Remove` removes all the shortcuts). The same launcher works anywhere: `npm run launch`, `npm run stop`. Its logs are in `logs/` (`build.log` if a build failed, `server.log` for the running app).
+
 ## Configuration
 
 All keys are read **only on the server** (`src/lib/server/env.ts`). The browser only ever learns *whether* something is configured (`GET /api/status`).
@@ -41,10 +51,20 @@ All keys are read **only on the server** (`src/lib/server/env.ts`). The browser 
 |---|---|
 | **Claude** (official Anthropic SDK; default model `claude-opus-5-5`) | `LLM_PROVIDER=anthropic`<br>`LLM_API_KEY=sk-ant-...` |
 | **Ollama** (local, free) | `LLM_PROVIDER=ollama`<br>`LLM_MODEL=qwen3-vl:4b-instruct` (or any model you've pulled)<br>`OLLAMA_NUM_CTX=8192` (optional; keep it small on 4-8 GB GPUs so the model stays on the GPU) |
-| **Groq** (free tier) | `LLM_PROVIDER=openai`<br>`LLM_BASE_URL=https://api.groq.com/openai/v1`<br>`LLM_API_KEY=gsk_...`<br>`LLM_MODEL=openai/gpt-oss-120b`<br>`LLM_JSON_MODE=false`<br>`LLM_TPM_LIMIT=8000`<br>`LLM_REASONING_EFFORT=low` |
+| **Groq** (free tier) | `LLM_PROVIDER=openai`<br>`LLM_BASE_URL=https://api.groq.com/openai/v1`<br>`LLM_API_KEY=gsk_...`<br>`LLM_MODEL=openai/gpt-oss-120b`<br>`LLM_JSON_MODE=false`<br>`LLM_TPM_LIMIT=8000`<br>`LLM_REASONING_EFFORT=low`<br>`LLM_VERIFY_MODEL=openai/gpt-oss-20b`<br>`LLM_FALLBACK_MODELS=openai/gpt-oss-20b` |
 | **Any other OpenAI-compatible API** (OpenAI, OpenRouter, Together, vLLM, LM Studio) | `LLM_PROVIDER=openai`<br>`LLM_BASE_URL=...`<br>`LLM_API_KEY=...`<br>`LLM_MODEL=...` |
 
-On rate-limited plans set `LLM_TPM_LIMIT` to the plan's tokens-per-minute: each request is sized to fit it, a 429 is retried after the server's `Retry-After`, and lesson parts and notes are generated one at a time instead of in parallel. Groq's free tier also caps tokens per day (about 200K for gpt-oss-120b), which is roughly 4–6 lessons with notes.
+On rate-limited plans set `LLM_TPM_LIMIT` to the plan's tokens-per-minute: each request is sized to fit it, a 429 is retried after the server's `Retry-After`, and lesson parts and notes are generated one at a time instead of in parallel. Groq's free tier also caps tokens per day (about 200K for gpt-oss-120b), so the free plan runs out after a few lessons a day. Limits are per model, so `LLM_VERIFY_MODEL` runs the fact-check on a second model with its own allowance, and `LLM_FALLBACK_MODELS` keeps lessons going on another model when one runs out. Groq's paid Developer tier (pay per token) lifts the daily cap.
+
+**Free and lasting: a chain of providers.** Each free plan has its own allowance, so ConceptAI tries several in order and moves down the chain when one is used up, rate-limited, offline or set up wrong: Gemini (if `GEMINI_API_KEY` is set; free key at aistudio.google.com, with a much larger per-minute budget, so long PDFs fit), then the `LLM_*` provider (e.g. Groq) and its `LLM_FALLBACK_MODELS`, then `LLM_FALLBACK_*`, `LLM_FALLBACK2_*`, `LLM_FALLBACK3_*` (each with `PROVIDER`, `MODEL` as a comma-separated list, `BASE_URL`, `API_KEY`, `TPM_LIMIT`, `REASONING_EFFORT`, `VERIFY_MODEL`). The amount of a PDF sent per request follows the model actually answering. No free plan is guaranteed forever; a local model at the end of the chain is the part that is.
+
+**Never stuck.** Set `LLM_FALLBACK_PROVIDER=ollama` and `LLM_FALLBACK_MODEL` (e.g. `qwen3-vl:4b-instruct`) and the app falls back to a model on your own computer when every hosted model is used up, still rate-limited after two minutes, or unreachable (you're offline). Lessons get slower and less precise but never stop, and the student sees which model is teaching and why. If Ollama isn't running, the app starts it (about 8 s). A wrong API key or model name also falls back, and is shown in red in the sidebar so it gets fixed. Saved lessons, notes and quizzes always replay without any model.
+
+Whatever was taught while the fact-checker was unavailable (by the local model, or out of quota, or offline) is labelled *not fact-checked yet* and checked automatically once the checker is back: when the lesson or notes are opened and every 5 minutes while they're open. Corrections land as usual (said out loud if already heard); notes are never changed while you're editing them, and a corrected quiz question is asked again.
+
+Voice input uses Groq's Whisper when `STT_PROVIDER=groq`. If it fails (limit reached, unreachable), the mic switches to the browser's own speech recognition on the spot and asks the student to repeat, until the limit resets. Browser recognition works in Chrome, Edge and Safari (it is Google's or Apple's online service, so it needs a connection); Firefox has none, so there the student types.
+
+**Fact-checking.** Every lesson part, answer, set of notes and quiz gets a second, examiner-style review that recomputes numbers, re-runs algorithm traces and compares diagrams with the narration. Lesson parts and answers stream to the board straight away; corrections arrive a few seconds later and replace the original before it is played (if it was already played, the teacher says the correction out loud). Quizzes are checked before they are shown. `LLM_VERIFY=off` turns it off.
 
 Claude requests enable Anthropic's server-side refusal **fallbacks** (`fallbacks: "default"`, beta `server-side-fallback-2026-07-01`) so a rare safety decline is retried on the recommended fallback model; set `ANTHROPIC_FALLBACKS=off` if you route through a proxy that rejects it. `ANTHROPIC_EFFORT` (low/medium/high) trades depth for speed.
 
@@ -70,7 +90,7 @@ ConceptAI is meant to teach *any* concept, from Class 6 science to master's-leve
 | Feature | Variables | Fallback without them |
 |---|---|---|
 | AI teacher voice | `TTS_PROVIDER=openai` (or `elevenlabs`), `TTS_API_KEY`, optional `TTS_MODEL`, `TTS_VOICE`, `TTS_BASE_URL` | Browser `speechSynthesis` (picks an en-IN / hi-IN voice for Hinglish/Hindi) |
-| Speech-to-text | `STT_PROVIDER=openai`, `STT_API_KEY`, optional `STT_BASE_URL` (e.g. Groq), `STT_MODEL` | Browser `SpeechRecognition` (Chrome, Edge, Safari) |
+| Speech-to-text | `STT_PROVIDER=groq` (free Whisper; reuses `LLM_API_KEY` when the lesson model is on Groq) or `STT_PROVIDER=openai` + `STT_API_KEY`; optional `STT_BASE_URL`, `STT_MODEL`. The lesson title is sent as Whisper's prompt so technical terms are spelled right; recording stops by itself after ~1.4 s of silence. | Browser `SpeechRecognition` (Chrome, Edge, Safari) |
 | Persistence across devices | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`; run `supabase/schema.sql` and enable **anonymous sign-ins** | IndexedDB in this browser |
 
 ## How it works
@@ -115,5 +135,6 @@ tests/                   unit tests (parser, validator, expressions, timing, lay
 
 * PDF export uses the browser's print dialog (choose "Save as PDF"), which keeps equations and diagrams sharp.
 * Scanned PDFs have no text layer; run OCR first.
+* Teaching from your own material: attach a PDF, PPTX, DOCX, TXT or MD (up to 15 MB, about 250 pages of text) with **Teach from my syllabus / PDF / slides**; the topic box is optional then. With **Whole document** (picked automatically when a file is attached) every page is taught: the document is split at its own section headings into parts small enough to be read in full, as many as it takes, and they are written a couple of parts ahead of you. Quick/Standard/Deep give a shorter lesson planned from a page map of the whole document. How much text fits per request depends on the plan (on Groq's free tier about 5,000 characters per part, so a long page range is read in shortened form).
 * Small local models (3-8B) work, but bigger models draw noticeably better diagrams and make fewer factual slips.
 * The rate limiter and live-notes registry are in memory (single server instance).

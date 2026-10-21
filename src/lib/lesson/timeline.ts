@@ -14,7 +14,7 @@ export interface TimelineBeat {
   sectionId: string;
   sectionIndex: number;
   beat: Beat;
-  qa?: { id: string; question: string; first: boolean };
+  qa?: { id: string; question: string; first: boolean; correction?: boolean };
 }
 
 export const START_KEY = "^";
@@ -34,7 +34,7 @@ export function buildTimeline(lesson: Lesson): TimelineBeat[] {
     for (const q of byAnchor.get(anchor) ?? []) {
       q.beats.forEach((beat, j) => {
         const key = `qa:${q.id}:${j}`;
-        out.push({ key, sectionId, sectionIndex, beat, qa: { id: q.id, question: q.question, first: j === 0 } });
+        out.push({ key, sectionId, sectionIndex, beat, qa: { id: q.id, question: q.question, first: j === 0, correction: q.kind === "correction" } });
         emitAnswers(key, sectionId, sectionIndex);
       });
     }
@@ -84,10 +84,10 @@ export function pageItems(timeline: TimelineBeat[], sectionId: string, uptoIndex
     const t = timeline[i];
     if (t.sectionId !== sectionId) continue;
     if (t.qa?.first) {
-      // A question card heads every answer on the board.
+      // A question card heads every answer on the board (a correction gets a correction card).
       items.push({
         key: `${t.key}:q`,
-        item: { type: "text", tone: "question", text: t.qa.question },
+        item: { type: "text", tone: t.qa.correction ? "important" : "question", text: t.qa.question },
         beatIndex: i,
         qaId: t.qa.id,
       });

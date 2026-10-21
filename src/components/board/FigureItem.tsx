@@ -94,12 +94,14 @@ function shapeBounds(shapes: Shape[]): [number, number, number, number] {
 
 export function FigureItem({ item, timing, width }: { item: ItemOf<"figure">; timing: ItemTiming | null; width: number }) {
   const H0 = item.height ?? 60;
-  // The nominal canvas is 100 x height; grow it (never shrink) to whatever was actually drawn.
+  // The nominal canvas is 100 x height. Grow it to whatever was actually drawn,
+  // and trim empty bands the model left above or below the drawing, so the
+  // caption sits under it. The width is kept, so the scale stays as intended.
   const [bx0, by0, bx1, by1] = useMemo(() => shapeBounds(item.shapes), [item.shapes]);
   const vx = Math.min(0, bx0 - 5);
-  const vy = Math.min(0, by0 - 5);
+  const vy = by0 > 12 ? by0 - 8 : Math.min(0, by0 - 5);
   const vw = Math.max(100, bx1 + 5) - vx;
-  const H = Math.max(H0, by1 + 5) - vy;
+  const H = Math.min(Math.max(H0, by1 + 5), by1 + 10) - vy;
   const unitPx = width / vw; // px per figure unit
   const sw = STROKE_PX / unitPx;
   const n = item.shapes.length;

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Bold, Check, Columns2, Copy, Download, Eye, FileDown, Heading2, List, Pencil, Printer, RotateCcw, Sigma, Square, Trash } from "lucide-react";
 import type { Note } from "@/lib/lesson/types";
-import { cancelNote, generateNote, isGeneratingNote, settleNote, useLiveNote } from "@/lib/notes/generate";
+import { cancelNote, generateNote, isGeneratingNote, setEditingNote, settleNote, useLiveNote, useNoteRecheck } from "@/lib/notes/generate";
 import { store } from "@/lib/store";
 import { cn, downloadText, slugify } from "@/lib/utils";
 import { Button, Spinner } from "@/components/ui";
@@ -37,7 +37,14 @@ export function NoteEditor({ id }: { id: string }) {
       setDraft(n.content);
       setTitle(n.title);
     });
-  }, [id, live?.status]);
+  }, [id, live?.status, live?.version]);
+
+  // A later fact-check never rewrites notes while they're being edited.
+  useNoteRecheck(id);
+  useEffect(() => {
+    setEditingNote(id, mode !== "preview" || saved !== "saved");
+    return () => setEditingNote(id, false);
+  }, [id, mode, saved]);
 
   const persist = useCallback(
     async (patch: Partial<Note>) => {
@@ -143,8 +150,13 @@ export function NoteEditor({ id }: { id: string }) {
         />
         <span className="hidden text-[12px] text-subtle sm:inline">
           {generating ? (
-            <span className="flex items-center gap-1.5 text-accent-strong">
-              <Spinner size={12} /> Writing… {Math.round((live?.content.length ?? 0) / 100) / 10}k
+            <span className="flex items-center gap-1.5 text-accent-strong" title={live?.notice}>
+              <Spinner size={12} /> {live?.checking ? "Fact-checking…" : `Writing… ${Math.round((live?.content.length ?? 0) / 100) / 10}k`}
+              {live?.notice && !live.checking ? " (stand-in model)" : ""}
+            </span>
+          ) : saved === "saved" && note.checked === false ? (
+            <span className="text-warn" title="Written while the fact-checker was unavailable; checked automatically once it is back (not while you're editing).">
+              Not fact-checked yet
             </span>
           ) : saved === "saved" ? (
             <span className="flex items-center gap-1">

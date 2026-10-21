@@ -8,6 +8,8 @@ import { BulletsItem, MathItem, StepsItem, TableItem, TextItem, TitleItem } from
 import { FigureItem } from "./FigureItem";
 import { PlotItem } from "./PlotItem";
 import { FlowchartItem } from "./FlowchartItem";
+import { TreeItem } from "./TreeItem";
+import { ArrayItem } from "./ArrayItem";
 
 /** Whether an item takes half the board width (so another can sit beside it). */
 export function isHalf(item: BoardItem): boolean {
@@ -48,5 +50,9 @@ export const BoardItemView = memo(function BoardItemView({
       return <PlotItem item={item} timing={timing} width={w} />;
     case "flowchart":
       return <FlowchartItem item={item} timing={timing} width={w} />;
+    case "tree":
+      return <TreeItem item={item} timing={timing} width={w} />;
+    case "array":
+      return <ArrayItem item={item} timing={timing} width={w} />;
   }
 });

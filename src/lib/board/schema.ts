@@ -151,6 +151,25 @@ const FlowEdgeSchema = z.object({
   label: optText(30),
 });
 
+/** A node reference: any short string or number. */
+const ref = z.union([z.string(), z.number()]).transform((v) => cleanText(String(v), 40)).pipe(z.string().min(1));
+const index = z.coerce.number().int().min(0).max(99);
+
+const TreeNodeSchema = z.object({
+  id: ref,
+  label: text(24),
+  parent: ref.optional().catch(undefined),
+  /** In a binary tree, which child this is (so a lone right child is drawn on the right). */
+  side: z.enum(["left", "right"]).optional().catch(undefined),
+  /** Label on the edge from the parent (e.g. "yes", "0"). */
+  edge: optText(20),
+  color,
+});
+
+const ArrayPointerSchema = z.object({ index, label: text(14), color });
+/** An array cell; null or "" is an empty cell. */
+const cell = z.union([z.string(), z.number(), z.null()]).transform((v) => (v === null ? "" : cleanText(String(v), 12)));
+
 export const BoardItemSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("title"), text: text(90), ...itemBase }),
   z.object({ type: z.literal("heading"), text: text(90), ...itemBase }),
@@ -211,6 +230,32 @@ export const BoardItemSchema = z.discriminatedUnion("type", [
     size,
     ...itemBase,
   }),
+  // Trees and arrays are laid out by the board itself, so the model only says
+  // what is in them, never where: no overlapping nodes or edges that miss.
+  z.object({
+    type: z.literal("tree"),
+    nodes: lenientArray(TreeNodeSchema, 31).refine(nonEmpty),
+    binary: bool,
+    highlight: lenientArray(ref, 31).optional().catch(undefined),
+    caption: optText(80),
+    size,
+    ...itemBase,
+  }),
+  z.object({
+    type: z.literal("array"),
+    values: lenientArray(cell, 24).refine(nonEmpty),
+    /** Name written before the array, e.g. "A". */
+    label: optText(12),
+    /** First index (0 or 1); pointers, highlight and dim use the same numbering. */
+    start: z.coerce.number().int().min(0).max(1).optional().catch(undefined),
+    indices: bool,
+    pointers: lenientArray(ArrayPointerSchema, 6).optional().catch(undefined),
+    highlight: lenientArray(index, 24).optional().catch(undefined),
+    dim: lenientArray(index, 24).optional().catch(undefined),
+    caption: optText(80),
+    size,
+    ...itemBase,
+  }),
 ]);
 
 export type BoardItem = z.output<typeof BoardItemSchema>;
@@ -263,6 +308,19 @@ const TYPE_ALIASES: Record<string, BoardItemType> = {
   plot: "plot",
   graph: "plot",
   chart: "plot",
+  tree: "tree",
+  heap: "tree",
+  bst: "tree",
+  binary_tree: "tree",
+  recursion_tree: "tree",
+  decision_tree: "tree",
+  trie: "tree",
+  hierarchy: "tree",
+  array: "array",
+  arr: "array",
+  array_diagram: "array",
+  memory: "array",
+  cells: "array",
 };
 
 const SHAPE_ALIASES: Record<string, Shape["shape"]> = {
@@ -307,10 +365,62 @@ function normaliseShape(raw: unknown): unknown {
   return s;
 }
 
+const nodeLabel = (n: Loose) => n.label ?? n.value ?? n.name ?? n.key ?? n.val ?? n.text;
+const isEmptyCell = (v: unknown) => v === null || v === undefined || v === "" || v === "null" || v === "None";
+
+/** A binary tree in level order (heap / array layout): node i's parent is (i - 1) / 2. Empty slots are skipped. */
+function levelOrderNodes(values: unknown[]): Loose[] {
+  const present = new Set<number>();
+  const out: Loose[] = [];
+  values.slice(0, 31).forEach((v, i) => {
+    const parent = (i - 1) >> 1;
+    if (isEmptyCell(v) || (i > 0 && !present.has(parent))) return;
+    present.add(i);
+    out.push({ id: String(i), label: v, parent: i > 0 ? String(parent) : undefined, side: i === 0 ? undefined : i % 2 ? "left" : "right" });
+  });
+  return out;
+}
+
+/** A nested tree ({label, children:[...]}, or {label, left, right}) as a flat node list. */
+function flattenTree(root: Loose): Loose[] {
+  const out: Loose[] = [];
+  const walk = (n: unknown, parent: string | undefined, side: string | undefined, depth: number) => {
+    if (!isObj(n) || out.length >= 31 || depth > 8) return;
+    const id = `n${out.length}`;
+    out.push({ id, label: nodeLabel(n), parent, side, edge: n.edge, color: n.color });
+    if (Array.isArray(n.children)) n.children.forEach((c) => walk(c, id, undefined, depth + 1));
+    if (n.left !== undefined || n.right !== undefined) {
+      walk(n.left, id, "left", depth + 1);
+      walk(n.right, id, "right", depth + 1);
+    }
+  };
+  walk(root, undefined, undefined, 0);
+  return out;
+}
+
+/** Nodes listed with "children" (ids or nested objects) instead of "parent". */
+function normaliseTreeNodes(nodes: unknown[]): unknown[] {
+  if (nodes.some((n) => isObj(n) && Array.isArray(n.children) && n.children.some(isObj))) {
+    const root = nodes.find(isObj);
+    return root ? flattenTree(root) : nodes;
+  }
+  const out = nodes.map((n) => (isObj(n) ? { ...n, label: nodeLabel(n), id: n.id ?? nodeLabel(n) } : n)) as Loose[];
+  for (const n of out) {
+    if (!isObj(n) || !Array.isArray(n.children)) continue;
+    for (const c of n.children) {
+      const child = out.find((m) => isObj(m) && String(m.id) === String(c));
+      if (child && child.parent === undefined) child.parent = n.id;
+    }
+  }
+  return out;
+}
+
 function normaliseItem(raw: unknown): unknown {
   if (!isObj(raw)) return raw;
   const it: Loose = { ...raw };
-  const kind = String(it.type ?? it.kind ?? "").toLowerCase();
+  const kind = String(it.type ?? it.kind ?? "")
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
   it.type = TYPE_ALIASES[kind] ?? kind;
   if (kind === "definition" && !it.tone) it.tone = "definition";
   if ((it.type === "text" || it.type === "title" || it.type === "heading") && it.text === undefined) {
@@ -348,7 +458,65 @@ function normaliseItem(raw: unknown): unknown {
     if (xr) [it.xMin, it.xMax] = xr;
     if (yr) [it.yMin, it.yMax] = yr;
   }
+  if (it.type === "tree") {
+    const values = it.values ?? it.levelOrder ?? it.level_order ?? it.array ?? it.heap ?? it.data;
+    if (it.nodes === undefined && Array.isArray(values)) {
+      it.nodes = levelOrderNodes(values);
+      it.binary ??= true;
+    } else if (it.nodes === undefined && isObj(it.root)) it.nodes = flattenTree(it.root);
+    else if (Array.isArray(it.nodes)) it.nodes = normaliseTreeNodes(it.nodes);
+    if (it.highlight !== undefined && !Array.isArray(it.highlight)) it.highlight = [it.highlight];
+  }
+  if (it.type === "array") {
+    it.values ??= it.items ?? it.elements ?? it.data ?? it.cells ?? it.array;
+    if (typeof it.values === "string") it.values = it.values.split(/\s*,\s*|\s+/).filter(Boolean);
+    // Pointers as {"low": 0, "high": 6}, or with "at"/"i"/"name" keys.
+    if (isObj(it.pointers)) it.pointers = Object.entries(it.pointers).map(([label, at]) => ({ label, index: at }));
+    if (Array.isArray(it.pointers)) {
+      it.pointers = it.pointers.map((p) => (isObj(p) ? { ...p, index: p.index ?? p.at ?? p.i ?? p.position, label: p.label ?? p.name } : p));
+    }
+    for (const key of ["highlight", "dim"]) if (it[key] !== undefined && !Array.isArray(it[key])) it[key] = [it[key]];
+  }
   return it;
+}
+
+/** Make a tree drawable: unique ids, parents that exist, no cycles, and consistent left/right sides. */
+function repairTree(item: ItemOf<"tree">): void {
+  const seen = new Set<string>();
+  item.nodes = item.nodes.filter((n) => !seen.has(n.id) && seen.add(n.id));
+  const byId = new Map(item.nodes.map((n) => [n.id, n]));
+  for (const n of item.nodes) {
+    if (n.parent !== undefined && (!byId.has(n.parent) || n.parent === n.id)) n.parent = undefined;
+  }
+  // A parent chain that loops back is cut where it closes.
+  for (const n of item.nodes) {
+    const path = new Set<string>([n.id]);
+    let cur = n;
+    while (cur.parent !== undefined) {
+      if (path.has(cur.parent)) {
+        cur.parent = undefined;
+        break;
+      }
+      path.add(cur.parent);
+      cur = byId.get(cur.parent)!;
+    }
+  }
+  const kids = new Map<string, typeof item.nodes>();
+  for (const n of item.nodes) if (n.parent !== undefined) kids.set(n.parent, [...(kids.get(n.parent) ?? []), n]);
+  const binary = item.binary || item.nodes.some((n) => n.side);
+  item.binary = binary && [...kids.values()].every((c) => c.length <= 2);
+  if (!item.binary) {
+    item.nodes.forEach((n) => (n.side = undefined));
+    return;
+  }
+  for (const c of kids.values()) {
+    // Two children on the same side, or unmarked: first is left, second right.
+    if (c.length === 2 && c[0].side === c[1].side) [c[0].side, c[1].side] = ["left", "right"];
+    else if (c.length === 2) {
+      c[0].side ??= c[1].side === "left" ? "right" : "left";
+      c[1].side ??= c[0].side === "left" ? "right" : "left";
+    } else c[0].side ??= "left";
+  }
 }
 
 /** "$x^2$" or "\[x^2\]" from the model become "x^2" for display math. */
@@ -364,13 +532,21 @@ export function stripMathDelimiters(latex: string): string {
 
 export interface SanitizeReport {
   dropped: number;
+  /** Why items were dropped ("figure: shapes", "flowchart"), to find gaps in the vocabulary. */
+  reasons?: string[];
 }
 
 /** Validate one item from the model. Returns null when it cannot be drawn safely. */
 export function sanitizeItem(raw: unknown, report?: SanitizeReport): BoardItem | null {
-  const parsed = BoardItemSchema.safeParse(normaliseItem(raw));
+  const normalised = normaliseItem(raw);
+  const parsed = BoardItemSchema.safeParse(normalised);
   if (!parsed.success) {
-    if (report) report.dropped++;
+    if (report) {
+      report.dropped++;
+      const type = isObj(normalised) ? String(normalised.type ?? "?") : typeof raw;
+      const field = parsed.error.issues[0]?.path.join(".") ?? "";
+      report.reasons?.push(field ? `${type}: ${field}` : type);
+    }
     return null;
   }
   const item = parsed.data;
@@ -392,10 +568,35 @@ export function sanitizeItem(raw: unknown, report?: SanitizeReport): BoardItem |
     const ids = new Set(item.nodes.map((n) => n.id));
     item.edges = item.edges.filter((e) => ids.has(e.from) && ids.has(e.to) && e.from !== e.to);
   }
+  if (item.type === "tree") repairTree(item);
+  // Array markers must point at real cells.
+  if (item.type === "array") {
+    const base = item.start ?? 0;
+    const inRange = (i: number) => i - base >= 0 && i - base < item.values.length;
+    item.pointers = item.pointers?.filter((p) => inRange(p.index));
+    item.highlight = item.highlight?.filter(inRange);
+    item.dim = item.dim?.filter(inRange);
+  }
   return item;
 }
 
 const MAX_ITEMS_PER_BEAT = 6;
+
+/** A run of LaTeX written without $...$: a command (\omega) or a braced power/index (e^{jt}, x_{n}). */
+const BARE_LATEX = /[A-Za-z0-9().]*(?:\\[a-zA-Z]+|[\^_]\{[^}$]*\})(?:[A-Za-z0-9().^_]|\\[a-zA-Z]+|\{[^}$]*\})*/g;
+
+/**
+ * Narration should be plain spoken words, but models sometimes write
+ * "e^{j\omega t}" in it. Wrap such fragments in $...$ so the chat renders them
+ * as maths and the voice reads them as words instead of "backslash omega".
+ */
+export function wrapBareLatex(text: string): string {
+  if (!/\\[a-zA-Z]|[\^_]\{/.test(text)) return text;
+  return text
+    .split(/(\$[^$]*\$)/)
+    .map((part, i) => (i % 2 === 1 ? part : part.replace(BARE_LATEX, (m) => `$${m}$`)))
+    .join("");
+}
 
 /** Validate one beat. Accepts a few shapes models commonly produce. */
 export function sanitizeBeat(raw: unknown, report?: SanitizeReport): Beat | null {
@@ -406,7 +607,7 @@ export function sanitizeBeat(raw: unknown, report?: SanitizeReport): Beat | null
     return item ? { say: "", draw: [item] } : null;
   }
   const sayRaw = raw.say ?? raw.narration ?? raw.speech ?? raw.speak ?? raw.voice ?? "";
-  const say = cleanText(typeof sayRaw === "string" ? sayRaw : String(sayRaw), 900);
+  const say = wrapBareLatex(cleanText(typeof sayRaw === "string" ? sayRaw : String(sayRaw), 900));
   let drawRaw = raw.draw ?? raw.board ?? raw.items ?? raw.actions ?? raw.write ?? [];
   if (isObj(drawRaw)) drawRaw = [drawRaw];
   const draw: BoardItem[] = [];

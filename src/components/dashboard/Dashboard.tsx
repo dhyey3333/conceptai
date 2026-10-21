@@ -60,8 +60,11 @@ export function Dashboard() {
   const plannedModel = chooseTier(tierPref, level) === "best" || !fast ? status?.llm.model : fast.model;
   const plannedResearch = researchMode !== "off" && shouldResearch(researchPref, level);
 
+  // With material attached the topic box is optional: the lesson is planned from the document itself.
+  const fromFile = sources[0] ? sources[0].name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim() : "";
+
   const start = async (t = topic) => {
-    const clean = t.trim();
+    const clean = t.trim() || fromFile;
     if (clean.length < 2 || busy) return;
     setBusy(true);
     const now = Date.now();
@@ -148,11 +151,11 @@ export function Dashboard() {
               }}
               rows={2}
               maxLength={300}
-              placeholder="e.g. Explain electromagnetic induction with Faraday's law"
+              placeholder={fromFile ? `Teach me ${sources[0]?.name}, or type what to focus on` : "e.g. Explain electromagnetic induction with Faraday's law"}
               className="min-h-[56px] flex-1 resize-none bg-transparent px-2 py-2 text-[17px] text-fg placeholder:text-subtle focus:outline-none"
               aria-label="Topic to learn"
             />
-            <Button type="submit" variant="primary" size="lg" loading={busy} disabled={!llm || topic.trim().length < 2} title={llm ? "Start the lesson" : "Configure an AI provider first"}>
+            <Button type="submit" variant="primary" size="lg" loading={busy} disabled={!llm || (topic.trim().length < 2 && !fromFile)} title={llm ? (topic.trim() || !fromFile ? "Start the lesson" : `Teach me ${sources[0]?.name}`) : "Configure an AI provider first"}>
               Teach me <ArrowRight size={16} />
             </Button>
           </div>
@@ -173,7 +176,7 @@ export function Dashboard() {
                 ))}
               </OptionRow>
               <OptionRow label="Length">
-                {DEPTHS.map((d) => (
+                {DEPTHS.filter((d) => d.value !== "full" || sources.length > 0).map((d) => (
                   <Chip key={d.value} active={depth === d.value} onClick={() => setDepth(d.value)} title={d.hint}>
                     {d.label}
                   </Chip>
@@ -211,7 +214,16 @@ export function Dashboard() {
               </div>
             )}
             <OptionRow label="Source">
-              <SourceUpload sources={sources} onChange={setSources} label="Teach from my syllabus / PDF / slides" />
+              <SourceUpload
+                sources={sources}
+                onChange={(next) => {
+                  // Material attached: teach all of it by default; removed: back to a normal lesson.
+                  if (next.length && !sources.length) setDepth("full");
+                  if (!next.length && depth === "full") setDepth("standard");
+                  setSources(next);
+                }}
+                label="Teach from my syllabus / PDF / slides"
+              />
             </OptionRow>
             {llm && (
               <p className="pl-[4.5rem] text-[12px] text-subtle">

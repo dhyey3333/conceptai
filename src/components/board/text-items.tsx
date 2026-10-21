@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, type CSSProperties } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { ItemOf } from "@/lib/board/schema";
 import type { ItemTiming } from "@/lib/board/timing";
 import { renderLatex, richHtml, richTokensHtml } from "@/lib/math/render";
@@ -117,11 +117,39 @@ export function BulletsItem({ item, timing }: { item: ItemOf<"bullets">; timing:
   );
 }
 
+/**
+ * Shrink a block's font so wide maths fits the board instead of running off
+ * its edge (down to 55%; past that it scrolls). Measured after render and
+ * again once fonts load, since KaTeX glyph widths change then.
+ */
+function useFitFont<T extends HTMLElement>(key: string) {
+  const ref = useRef<T>(null);
+  const [px, setPx] = useState<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => {
+      el.style.fontSize = "";
+      const base = parseFloat(getComputedStyle(el).fontSize);
+      const fit = el.scrollWidth > el.clientWidth + 1 ? Math.max(0.55, el.clientWidth / el.scrollWidth) : 1;
+      setPx(fit < 1 ? Math.floor(base * fit) : undefined);
+    };
+    measure();
+    let live = true;
+    void document.fonts?.ready.then(() => live && measure());
+    return () => {
+      live = false;
+    };
+  }, [key]);
+  return [ref, px] as const;
+}
+
 export function MathItem({ item, timing }: { item: ItemOf<"math">; timing: ItemTiming | null }) {
   const html = useMemo(() => renderLatex(item.latex, true), [item.latex]);
   const writeDur = timing ? timing.dur * (item.label ? 0.85 : 1) : 0;
+  const [ref, fontSize] = useFitFont<HTMLDivElement>(item.latex);
   return (
-    <div className={cn("b-math", item.boxed && "boxed")} style={{ color: item.color ? ink(item.color) : undefined }}>
+    <div ref={ref} className={cn("b-math", item.boxed && "boxed")} style={{ color: item.color ? ink(item.color) : undefined, fontSize }}>
       <div
         className="math-inner sweep"
         style={vars({ "--d0": timing ? ms(timing.start) : undefined, "--dd": ms(writeDur) })}
@@ -139,8 +167,9 @@ export function MathItem({ item, timing }: { item: ItemOf<"math">; timing: ItemT
 export function StepsItem({ item, timing }: { item: ItemOf<"steps">; timing: ItemTiming | null }) {
   const lines = useMemo(() => item.lines.map((l) => renderLatex(l.latex, true)), [item.lines]);
   const slot = timing ? timing.dur / lines.length : 0;
+  const [ref, fontSize] = useFitFont<HTMLDivElement>(item.lines.map((l) => l.latex).join("\n"));
   return (
-    <div className="b-steps" style={{ color: item.color ? ink(item.color) : undefined }}>
+    <div ref={ref} className="b-steps" style={{ color: item.color ? ink(item.color) : undefined, fontSize }}>
       {lines.map((html, i) => {
         const d0 = timing ? timing.start + i * slot : 0;
         return (

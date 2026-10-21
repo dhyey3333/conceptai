@@ -1,7 +1,7 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
-import { streamNdjson } from "@/lib/api";
+import { useEffect, useSyncExternalStore } from "react";
+import { postJson, streamNdjson } from "@/lib/api";
 import { store } from "@/lib/store";
 import type { Level, Note, Source, Tier } from "@/lib/lesson/types";
 
@@ -21,6 +21,12 @@ interface LiveState {
   content: string;
   status: Note["status"];
   error?: string;
+  /** Written in full; the fact-check is reading it (it may replace the text with a corrected copy). */
+  checking?: boolean;
+  /** Why a stand-in model is writing (e.g. the free plan ran out). */
+  notice?: string;
+  /** Bumped when stored notes change outside the editor (a later fact-check), so open views reload. */
+  version?: number;
 }
 
 /** Notes being generated right now, shared by every view that shows them. */
@@ -78,6 +84,8 @@ export async function generateNote(note: Note, params: NoteParams): Promise<Note
   const ctrl = new AbortController();
   controllers.set(note.id, ctrl);
   let content = "";
+  let notice: string | undefined;
+  let checked: boolean | undefined;
   const state: LiveState = { content: "", status: "generating" };
   live.set(note.id, state);
   emit(note.id);
@@ -91,12 +99,34 @@ export async function generateNote(note: Note, params: NoteParams): Promise<Note
       "/api/notes",
       params,
       (ev) => {
+        if (ev.type === "done") {
+          // Absent when fact-checking is off; false when the checker couldn't run.
+          if (typeof ev.checked === "boolean") checked = ev.checked;
+          return;
+        }
+        if (ev.type === "notice") {
+          notice = String(ev.message ?? "") || undefined;
+          live.set(note.id, { content, status: "generating", notice });
+          emit(note.id);
+          return;
+        }
+        if (ev.type === "checking") {
+          live.set(note.id, { content, status: "generating", checking: true, notice });
+          emit(note.id);
+          return;
+        }
+        if (ev.type === "replace") {
+          content = String(ev.text ?? content);
+          live.set(note.id, { content, status: "generating", checking: true, notice });
+          emit(note.id);
+          return;
+        }
         if (ev.type !== "text") return;
         content += String(ev.text ?? "");
         const now = Date.now();
         // Re-render at most ~8 times a second; save every few seconds.
         if (now - lastEmit > 120) {
-          live.set(note.id, { content, status: "generating" });
+          live.set(note.id, { content, status: "generating", notice });
           emit(note.id);
           lastEmit = now;
         }
@@ -107,7 +137,7 @@ export async function generateNote(note: Note, params: NoteParams): Promise<Note
       },
       ctrl.signal,
     );
-    current = { ...current, content, title: titleFrom(content, note.title), status: "ready", updatedAt: Date.now() };
+    current = { ...current, content, title: titleFrom(content, note.title), status: "ready", checked, updatedAt: Date.now() };
   } catch (e) {
     const aborted = (e as Error).name === "AbortError";
     current = {
@@ -124,4 +154,68 @@ export async function generateNote(note: Note, params: NoteParams): Promise<Note
   emit(note.id);
   await store.saveNote(current);
   return current;
+}
+
+// --- fact-checking notes later ---------------------------------------------------
+
+/** Notes open in an editor (edit/split mode or unsaved typing): never changed under the writer's hands. */
+const editing = new Set<string>();
+const rechecking = new Set<string>();
+/** The server has fact-checking turned off (LLM_VERIFY=off): stop asking. */
+let recheckOff = false;
+
+export function setEditingNote(id: string, on: boolean): void {
+  if (on) editing.add(id);
+  else editing.delete(id);
+}
+
+/**
+ * Fact-check notes that were written while the checker was unavailable (by
+ * the local stand-in, or out of quota / offline). Corrections are applied only
+ * if nobody is editing the notes and the text hasn't changed meanwhile;
+ * otherwise they're checked again next time.
+ */
+export async function recheckNote(id: string): Promise<void> {
+  if (recheckOff || rechecking.has(id) || editing.has(id) || isGeneratingNote(id)) return;
+  const note = await store.getNote(id);
+  if (!note || note.checked !== false || note.status !== "ready" || !note.content.trim()) return;
+  rechecking.add(id);
+  try {
+    const r = await postJson<{ checked: boolean; disabled?: boolean; content?: string; fixes?: number }>("/api/check", {
+      kind: "notes",
+      topic: note.topic,
+      level: note.level,
+      tier: note.tier,
+      research: note.research,
+      content: note.content,
+    });
+    if (r.disabled) {
+      recheckOff = true;
+      return;
+    }
+    if (!r.checked) return;
+    const now = await store.getNote(id);
+    if (!now || now.content !== note.content || editing.has(id)) return;
+    const next: Note = { ...now, content: r.content ?? now.content, checked: true, fixes: (now.fixes ?? 0) + (r.fixes ?? 0), updatedAt: Date.now() };
+    await store.saveNote(next);
+    live.set(id, { content: next.content, status: "ready", version: (live.get(id)?.version ?? 0) + 1 });
+    emit(id);
+  } catch {
+    // Offline or failing: try again next time.
+  } finally {
+    rechecking.delete(id);
+  }
+}
+
+/** While notes are on screen, check them once soon and then every few minutes until they're checked. */
+export function useNoteRecheck(id: string | undefined): void {
+  useEffect(() => {
+    if (!id) return;
+    const soon = setTimeout(() => void recheckNote(id), 5000);
+    const every = setInterval(() => void recheckNote(id), 5 * 60_000);
+    return () => {
+      clearTimeout(soon);
+      clearInterval(every);
+    };
+  }, [id]);
 }

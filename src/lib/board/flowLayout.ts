@@ -28,6 +28,8 @@ export interface LaidOutEdge {
   back: boolean;
   head: [number, number, number]; // arrow tip x, y and angle (radians)
   mid: [number, number];
+  /** "start": the label begins at `mid` (outside a loop-back curve) instead of being centred on it. */
+  anchor?: "start";
 }
 
 export interface FlowLayout {
@@ -170,6 +172,7 @@ export function layoutFlowchart(item: ItemOf<"flowchart">): FlowLayout {
 
   // Edges: smooth cubic curves from the source's exit side to the target's entry side.
   const node = new Map(laid.map((n) => [n.id, n]));
+  let loops = 0;
   const laidEdges: LaidOutEdge[] = edges.map((e) => {
     const a = node.get(e.from)!;
     const b = node.get(e.to)!;
@@ -177,22 +180,32 @@ export function layoutFlowchart(item: ItemOf<"flowchart">): FlowLayout {
     let path: string;
     let head: [number, number, number];
     let mid: [number, number];
+    let anchor: LaidOutEdge["anchor"];
     if (isBack) {
-      // Loop around the outside so it doesn't cut through the chart.
+      // Loop around the outside of every node between the two ends (not just
+      // the ends), so it never cuts through the chart; each further loop goes
+      // a little wider. A cubic with both controls at `bulge` peaks at
+      // 3/4 bulge + 1/8 of each end, which is where the label goes, outside.
+      const k = loops++ * 28;
       if (dir === "TB") {
         const sx = a.x + a.w / 2;
         const tx = b.x + b.w / 2;
-        const bulge = Math.max(sx, tx) + 60;
+        const [lo, hi] = [Math.min(a.y, b.y) - a.h / 2, Math.max(a.y, b.y) + b.h / 2];
+        const right = Math.max(sx, tx, ...laid.filter((n) => n.y + n.h / 2 >= lo && n.y - n.h / 2 <= hi).map((n) => n.x + n.w / 2));
+        const bulge = right + 60 + k;
         path = `M ${sx} ${a.y} C ${bulge} ${a.y}, ${bulge} ${b.y}, ${tx} ${b.y}`;
         head = [tx, b.y, Math.PI];
-        mid = [bulge - 15, (a.y + b.y) / 2];
+        mid = [0.75 * bulge + 0.125 * (sx + tx) + 8, (a.y + b.y) / 2];
+        anchor = "start";
       } else {
         const sy = a.y + a.h / 2;
         const ty = b.y + b.h / 2;
-        const bulge = Math.max(sy, ty) + 50;
+        const [lo, hi] = [Math.min(a.x, b.x) - a.w / 2, Math.max(a.x, b.x) + b.w / 2];
+        const bottom = Math.max(sy, ty, ...laid.filter((n) => n.x + n.w / 2 >= lo && n.x - n.w / 2 <= hi).map((n) => n.y + n.h / 2));
+        const bulge = bottom + 50 + k;
         path = `M ${a.x} ${sy} C ${a.x} ${bulge}, ${b.x} ${bulge}, ${b.x} ${ty}`;
         head = [b.x, ty, -Math.PI / 2];
-        mid = [(a.x + b.x) / 2, bulge - 12];
+        mid = [(a.x + b.x) / 2, 0.75 * bulge + 0.125 * (sy + ty) + 14];
       }
     } else if (dir === "TB") {
       const sy = a.y + a.h / 2;
@@ -209,14 +222,17 @@ export function layoutFlowchart(item: ItemOf<"flowchart">): FlowLayout {
       head = [tx, b.y, 0];
       mid = [(sx + tx) / 2, (a.y + b.y) / 2];
     }
-    return { from: e.from, to: e.to, label: e.label, path, back: isBack, head, mid };
+    return { from: e.from, to: e.to, label: e.label, path, back: isBack, head, mid, anchor };
   });
 
-  const extra = laidEdges.some((e) => e.back) ? 70 : 0;
-  return {
-    width: width + (dir === "TB" ? extra : 0),
-    height: height + (dir === "LR" ? extra : 0),
-    nodes: laid,
-    edges: laidEdges,
-  };
+  // Room for the loops and their labels.
+  let w = width;
+  let h = height;
+  for (const e of laidEdges) {
+    if (!e.back) continue;
+    const labelW = e.label ? e.label.length * CHAR_W * 0.85 + 14 : 0;
+    if (dir === "TB") w = Math.max(w, e.mid[0] + labelW + pad);
+    else h = Math.max(h, e.mid[1] + (e.label ? 14 : 0) + pad);
+  }
+  return { width: w, height: h, nodes: laid, edges: laidEdges };
 }

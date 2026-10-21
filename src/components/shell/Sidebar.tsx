@@ -90,7 +90,15 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <div className="flex items-center gap-2">
           <span className={cn("h-2 w-2 rounded-full", status?.llm.configured ? "bg-ok" : status ? "bg-warn" : "bg-subtle")} />
           {status?.llm.configured ? (
-            <span className="truncate" title={status.llm.fast ? `Easy topics: ${modelLabel(status.llm.fast.model)}` : status.llm.model}>
+            <span
+              className="truncate"
+              title={[
+                status.llm.fast ? `Easy topics: ${modelLabel(status.llm.fast.model)}` : status.llm.model,
+                status.llm.fallback ? `If it can't answer: ${status.llm.fallback}` : "",
+              ]
+                .filter(Boolean)
+                .join("\n")}
+            >
               AI: {status.llm.provider === "anthropic" ? modelLabel(status.llm.model) : `${providerName(status.llm.provider)} · ${status.llm.model}`}
               {status.llm.fast ? ` + ${modelLabel(status.llm.fast.model).replace(/^Claude /, "")}` : ""}
             </span>
@@ -100,6 +108,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             <span>Checking AI…</span>
           )}
         </div>
+        {status?.llm.problem && <div className="text-danger">{status.llm.problem}</div>}
         <div className="flex items-center gap-2">
           <span className={cn("h-2 w-2 rounded-full", status?.tts.configured ? "bg-ok" : "bg-subtle")} />
           Voice: {status?.tts.configured ? `AI (${status.tts.provider})` : "browser"}

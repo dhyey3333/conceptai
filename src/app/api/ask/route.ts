@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { streamBeats } from "@/lib/server/beats";
 import { askPrompt } from "@/lib/server/prompts";
+import { writeThenCheck } from "@/lib/server/verify";
 import { requireLlm } from "@/lib/server/llm";
 import {
   errorResponse,
@@ -43,7 +44,26 @@ export async function POST(req: Request) {
     requireLlm(body.tier);
     if (body.mode === "question" && !body.question.trim()) throw new RequestError("Please type or say a question.");
     const { system, user } = askPrompt(body);
-    return ndjson(req, (signal) => streamBeats({ system, messages: [{ role: "user", content: user }], maxTokens: 3500, tier: body.tier, signal }, 5, ["title", "heading"]));
+    const c = body.context;
+    const asked = body.mode === "simpler" ? "to explain it more simply" : body.mode === "example" ? "for another example" : `"${body.question.slice(0, 400)}"`;
+    const subject = {
+      topic: c.topic,
+      level: c.level,
+      research: c.research,
+      context: `This is the teacher's answer, mid-lesson ("${c.title}"), to a student who asked ${asked}.${body.about ? `\nThey asked about: ${body.about.slice(0, 600)}` : ""}${c.board ? `\nThe board at that moment: ${c.board.slice(0, 2000)}` : ""}`,
+    };
+    // Answers are short but must be right, so they always get at least medium reasoning, and a check.
+    return ndjson(req, (signal) =>
+      writeThenCheck(
+        streamBeats(
+          { system, messages: [{ role: "user", content: user }], maxTokens: 3500, tier: body.tier, minEffort: "medium", signal },
+          5,
+          ["title", "heading"],
+        ),
+        subject,
+        { tier: body.tier, signal },
+      ),
+    );
   } catch (err) {
     return errorResponse(err);
   }

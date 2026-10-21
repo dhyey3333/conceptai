@@ -4,6 +4,7 @@ import { extractJsonObject } from "@/lib/stream/jsonObjects";
 import { sanitizeQuiz } from "@/lib/quiz/schema";
 import { completeText, isRetriable, LlmError } from "@/lib/server/llm";
 import { quizPrompt } from "@/lib/server/prompts";
+import { checkQuiz } from "@/lib/server/verify";
 import { errorResponse, LevelSchema, rateLimit, readJson, ResearchTextSchema, TierSchema, TopicSchema } from "@/lib/server/http";
 
 const Body = z.object({
@@ -31,7 +32,11 @@ export async function POST(req: Request) {
         throw err;
       }
       const quiz = sanitizeQuiz(extractJsonObject(text));
-      if (quiz) return Response.json({ quiz });
+      if (!quiz) continue;
+      // A wrong answer key misleads more than anything else, so it is re-solved before the quiz is shown.
+      const subject = { topic: body.topic, level: body.level, research: body.research, context: "This is a practice quiz with its answer key." };
+      const checked = await checkQuiz(subject, quiz, { tier, signal: req.signal });
+      return Response.json({ quiz: checked.quiz, checked: checked.checked, fixes: checked.fixes });
     }
     throw new LlmError("The model didn't return usable questions. Please try again.", 502, "bad_output");
   } catch (err) {

@@ -36,7 +36,10 @@ export function PracticePanel({ s, session, canAsk }: { s: SessionState; session
   }
 
   const total = quiz.mcq.length + quiz.numerical.length;
-  const correct = Object.values(answers).filter(Boolean).length;
+  // Answers are keyed by the answer key too: if a later fact-check corrects a
+  // question, it is asked afresh instead of keeping a score from the wrong key.
+  const ids = [...quiz.mcq.map((q, i) => `m${i}:${q.answer}`), ...quiz.numerical.map((q, i) => `n${i}:${q.answer}`)];
+  const correct = ids.filter((id) => answers[id]).length;
   return (
     <div className="space-y-5 pb-4">
       <div className="flex items-center justify-between">
@@ -46,6 +49,11 @@ export function PracticePanel({ s, session, canAsk }: { s: SessionState; session
             {correct}/{total}
           </b>{" "}
           answered correctly
+          {s.lesson.quizChecked === false && (
+            <div className="mt-0.5 text-[12px] text-warn" title="The checker was unavailable when these were written; they are checked automatically once it is back.">
+              Answer key not fact-checked yet
+            </div>
+          )}
         </div>
         <Button
           size="sm"
@@ -60,10 +68,10 @@ export function PracticePanel({ s, session, canAsk }: { s: SessionState; session
         </Button>
       </div>
       {quiz.mcq.map((q, i) => (
-        <Mcq key={`m${i}-${q.q}`} q={q} n={i + 1} onAnswer={(ok) => record(`m${i}`, ok)} />
+        <Mcq key={`m${i}-${q.answer}-${q.q}`} q={q} n={i + 1} onAnswer={(ok) => record(`m${i}:${q.answer}`, ok)} />
       ))}
       {quiz.numerical.map((q, i) => (
-        <Numerical key={`n${i}-${q.q}`} q={q} n={quiz.mcq.length + i + 1} onAnswer={(ok) => record(`n${i}`, ok)} />
+        <Numerical key={`n${i}-${q.answer}-${q.q}`} q={q} n={quiz.mcq.length + i + 1} onAnswer={(ok) => record(`n${i}:${q.answer}`, ok)} />
       ))}
       {quiz.short.map((q, i) => (
         <Short key={`s${i}-${q.q}`} q={q} n={total + i + 1} />

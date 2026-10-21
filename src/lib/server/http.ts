@@ -112,16 +112,20 @@ export function ndjson(req: Request, run: (signal: AbortSignal) => AsyncGenerato
 
 export const LevelSchema = z.enum(["school", "senior", "college", "advanced"]).catch("college");
 export const LanguageSchema = z.enum(["english", "hinglish", "hindi"]).catch("english");
-export const DepthSchema = z.enum(["quick", "standard", "deep"]).catch("standard");
+export const DepthSchema = z.enum(["quick", "standard", "deep", "full"]).catch("standard");
 export const TopicSchema = z.string().trim().min(2, "is too short").max(300, "is too long");
-export const SourceSchema = z.string().max(60_000).optional();
+/** Uploaded study material: up to ~250 pages of text (the AI sees a page map and the relevant pages, not all of it). */
+export const SourceSchema = z.string().max(400_000).optional();
 
 export const OutlineSchema = z.object({
   title: z.string().max(200),
   subject: z.string().max(80),
   summary: z.string().max(600),
   objectives: z.array(z.string().max(300)).max(8),
-  sections: z.array(z.object({ id: z.string().max(20), title: z.string().max(200), goal: z.string().max(600) })).min(1).max(10),
+  sections: z
+    .array(z.object({ id: z.string().max(20), title: z.string().max(200), goal: z.string().max(600), pages: z.string().max(30).optional().catch(undefined) }))
+    .min(1)
+    .max(400),
 });
 
 export const TierSchema = z.enum(["fast", "best"]).optional().catch(undefined);

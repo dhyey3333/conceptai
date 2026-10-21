@@ -93,6 +93,7 @@ export function FlowchartItem({ item, timing, width }: { item: ItemOf<"flowchart
                 left: e.mid[0] * scale,
                 top: e.mid[1] * scale,
                 fontSize: 16 * Math.max(scale, 0.8),
+                transform: e.anchor === "start" ? "translate(0, -50%)" : undefined,
                 color: "var(--ink-green)",
                 background: "var(--board-bg)",
                 padding: "0 4px",

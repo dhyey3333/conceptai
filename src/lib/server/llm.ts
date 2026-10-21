@@ -8,7 +8,8 @@
  *              (its OpenAI shim is stuck at the model default) and force JSON.
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { llmConfig, type LlmConfig, type Tier } from "./env";
+import { budgetFor, isLocal, llmConfig, providerChain, type LlmConfig, type Tier } from "./env";
+import { startOllama } from "./ollama";
 
 export interface ChatMsg {
   role: "user" | "assistant";
@@ -26,6 +27,24 @@ export interface GenOptions {
   tier?: Tier;
   /** Told why generation ended; "length" means the output hit its token limit. */
   onStop?: (reason: "length" | "end") => void;
+  /** Minimum reasoning effort for this call (raises, never lowers, the configured effort). */
+  minEffort?: "low" | "medium" | "high";
+  /**
+   * A fact-check: each provider's VERIFY_MODEL goes first, and local models
+   * are never used (a small model "correcting" a big one does harm).
+   */
+  check?: boolean;
+  /** Told when another model takes over because the main one can't answer. */
+  onFallback?: (notice: FallbackNotice) => void;
+}
+
+const EFFORT_ORDER = ["low", "medium", "high"];
+
+/** The higher of two effort levels; unknown values count as the configured one. */
+export function atLeast(configured: string | undefined, minimum: string | undefined): string | undefined {
+  if (!minimum) return configured;
+  if (!configured) return minimum;
+  return EFFORT_ORDER.indexOf(minimum) > EFFORT_ORDER.indexOf(configured) ? minimum : configured;
 }
 
 export class LlmError extends Error {
@@ -33,6 +52,8 @@ export class LlmError extends Error {
     message: string,
     public status = 502,
     public code = "llm_error",
+    /** For code "quota": roughly when this model can be used again. */
+    public retryInMs?: number,
   ) {
     super(message);
   }
@@ -55,11 +76,141 @@ export function requireLlm(tier: Tier = "best"): LlmConfig {
   return cfg;
 }
 
+/** Models that ran out of quota, and when to try them again (per server process). */
+const outOfQuota = new Map<string, number>();
+const keyOf = (cfg: LlmConfig) => `${cfg.provider}:${cfg.baseUrl}:${cfg.model}`;
+
+/** Why the main model couldn't answer, and what is answering instead. */
+export interface FallbackNotice {
+  from: string;
+  to: string;
+  /** "config": a setup mistake (rejected key, unknown model) that the owner must fix. */
+  reason: "quota" | "busy" | "offline" | "config" | "error";
+  /** Whether the stand-in runs on this computer (slower, smaller). */
+  local: boolean;
+  /** Roughly when the main model's allowance frees up. */
+  minutes?: number;
+  /** For "config": what is wrong, in words. */
+  detail?: string;
+}
+
+export function fallbackMessage(n: FallbackNotice): string {
+  const why =
+    n.reason === "quota"
+      ? `${n.from} has used up its free allowance for now${n.minutes ? ` (it frees up in about ${n.minutes} min)` : ""}`
+      : n.reason === "busy"
+        ? `${n.from} is rate-limited right now`
+        : n.reason === "offline"
+          ? `${n.from} can't be reached (are you offline?)`
+          : n.reason === "config"
+            ? `${n.from} can't be used: ${n.detail ?? "check its settings"}. Fix it in .env.local and restart`
+            : `${n.from} isn't responding`;
+  return `${why}. Meanwhile ${n.to} is teaching${n.local ? " on this computer: slower, and less precise" : ""}.`;
+}
+
+/** The last setup mistake seen (shown in the sidebar), so a fallback never hides it. */
+let configProblem: { message: string; at: number } | null = null;
+
+export function currentConfigProblem(): string | undefined {
+  return configProblem && Date.now() - configProblem.at < 60 * 60_000 ? configProblem.message : undefined;
+}
+
+function reasonOf(err: LlmError): FallbackNotice["reason"] {
+  if (err.code === "quota") return "quota";
+  if (err.code === "rate_limited") return "busy";
+  if (err.code === "network") return "offline";
+  if (err.status === 401 || err.status === 403 || err.status === 404) return "config";
+  return "error";
+}
+
+function configDetail(err: LlmError): string {
+  if (err.status === 401) return "its API key was rejected";
+  if (err.status === 403) return "this API key isn't allowed to use it";
+  return "the model name wasn't found";
+}
+
+/**
+ * Anything another model might get around: limits, outages, no connection,
+ * and setup mistakes too (a rejected key, an unknown model), which are then
+ * reported loudly instead of stopping the lesson. Only a cancelled request
+ * ends the chain.
+ */
+function canFallBack(err: unknown): err is LlmError {
+  return err instanceof LlmError && err.code !== "aborted";
+}
+
+/** The models to try for one call, in order, across every provider in the chain. */
+function callChain(opts: Pick<GenOptions, "tier" | "check">): LlmConfig[] {
+  const head = requireLlm(opts.tier);
+  const out: LlmConfig[] = [];
+  for (const link of providerChain()) {
+    if (opts.check && isLocal(link.configs[0])) continue;
+    let configs = link.configs;
+    if (opts.check && link.verifyModel) {
+      const checker = configs.find((c) => c.model === link.verifyModel) ?? { ...configs[0], model: link.verifyModel };
+      configs = [checker, ...configs.filter((c) => c !== checker)];
+    }
+    out.push(...configs);
+  }
+  // The tier's model (e.g. a cheaper one for easy topics) teaches first when it isn't already.
+  if (!opts.check && keyOf(head) !== keyOf(out[0] ?? head)) out.unshift(head);
+  const seen = new Set<string>();
+  return out.filter((c) => !seen.has(keyOf(c)) && seen.add(keyOf(c)));
+}
+
+/** The model that would answer right now: the first one in the chain that isn't out of quota. */
+export function activeConfig(tier?: Tier): LlmConfig | null {
+  const chain = callChain({ tier });
+  return chain.find((c) => (outOfQuota.get(keyOf(c)) ?? 0) <= Date.now()) ?? chain[0] ?? null;
+}
+
+/**
+ * Characters of uploaded material that fit in one request, sized for the
+ * model that will actually answer (if Gemini is used up and Groq's small
+ * per-minute budget takes over, the material is trimmed to fit it).
+ */
+export function sourceBudget(tier: Tier | undefined, use: "plan" | "part" | "notes"): number {
+  return budgetFor(activeConfig(tier), use);
+}
+
+/**
+ * Stream from the first model of the provider chain, falling back down the
+ * chain when it can't answer (out of quota, rate-limited, offline, failing or
+ * set up wrong): other models of the same provider, then the next providers,
+ * ending with a local model, so a used-up free plan or a lost connection slows
+ * lessons down instead of stopping them. A model that is out of quota is
+ * skipped until it frees up.
+ */
 export async function* streamText(opts: GenOptions): AsyncGenerator<string> {
-  const cfg = requireLlm(opts.tier);
-  if (cfg.provider === "anthropic") yield* streamAnthropic(cfg, opts);
-  else if (cfg.provider === "ollama") yield* streamOllama(cfg, opts);
-  else yield* streamOpenAi(cfg, opts);
+  const chain = callChain(opts);
+  const usable = chain.filter((c) => (outOfQuota.get(keyOf(c)) ?? 0) <= Date.now());
+  const order = usable.length ? usable : chain;
+  // Starting on a stand-in because the main model is known to be out of quota.
+  if (order[0] !== chain[0]) {
+    const until = outOfQuota.get(keyOf(chain[0])) ?? 0;
+    opts.onFallback?.({ from: chain[0].model, to: order[0].model, reason: "quota", local: isLocal(order[0]), minutes: Math.max(1, Math.ceil((until - Date.now()) / 60_000)) });
+  }
+  for (let i = 0; i < order.length; i++) {
+    const cfg = order[i];
+    let started = false;
+    try {
+      const stream = cfg.provider === "anthropic" ? streamAnthropic(cfg, opts) : cfg.provider === "ollama" ? streamOllama(cfg, opts) : streamOpenAi(cfg, opts);
+      for await (const chunk of stream) {
+        started = true;
+        yield chunk;
+      }
+      return;
+    } catch (err) {
+      const next = order[i + 1];
+      if (started || !next || !canFallBack(err)) throw err;
+      if (err.code === "quota") outOfQuota.set(keyOf(cfg), Date.now() + (err.retryInMs ?? 15 * 60_000));
+      const reason = reasonOf(err);
+      const detail = reason === "config" ? configDetail(err) : undefined;
+      if (detail) configProblem = { message: `${cfg.model}: ${detail}. Fix it in .env.local and restart.`, at: Date.now() };
+      console.warn(`[conceptai] ${cfg.model}: ${err.message} Using ${next.model} instead.`);
+      opts.onFallback?.({ from: cfg.model, to: next.model, reason, local: isLocal(next), detail, minutes: err.retryInMs ? Math.ceil(err.retryInMs / 60_000) : undefined });
+    }
+  }
 }
 
 export async function completeText(opts: GenOptions): Promise<string> {
@@ -89,12 +240,12 @@ export function anthropic(cfg: LlmConfig): Anthropic {
 }
 
 /** Request fields every Claude call shares: effort, and server-side refusal fallbacks. */
-export function claudeExtras(cfg: LlmConfig) {
+export function claudeExtras(cfg: LlmConfig, minEffort?: GenOptions["minEffort"]) {
   // Haiku has no server-side fallback; older Haiku also rejects `effort`.
   const useFallbacks = cfg.fallbacks && !cfg.model.includes("haiku");
   const useEffort = !/haiku-4|claude-3/.test(cfg.model);
   return {
-    ...(useEffort ? { output_config: { effort: cfg.effort } } : {}),
+    ...(useEffort ? { output_config: { effort: atLeast(cfg.effort, minEffort) as LlmConfig["effort"] } } : {}),
     ...(useFallbacks ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
   };
 }
@@ -124,7 +275,7 @@ async function* streamAnthropic(cfg: LlmConfig, opts: GenOptions): AsyncGenerato
         // part of a lesson, so cache it; repeat calls read it at the cache rate.
         system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }],
         messages: opts.messages,
-        ...claudeExtras(cfg),
+        ...claudeExtras(cfg, opts.minEffort),
       },
       { signal: opts.signal },
     );
@@ -197,8 +348,33 @@ export function fitToBudget(opts: Pick<GenOptions, "system" | "messages" | "maxT
   return Math.max(512, Math.min(opts.maxTokens, tpmLimit - inputTokens - 256));
 }
 
-async function upstream(url: string, init: RequestInit, label: string, retries = 2): Promise<Response> {
+/** "7.66s", "1m2.5s", "450ms" (Groq's reset headers and error messages) in milliseconds. */
+export function durationMs(text: string | null | undefined): number | null {
+  const m = /^(?:(\d+)h)?(?:(\d+)m(?!s))?(?:(\d+(?:\.\d+)?)s)?(?:(\d+(?:\.\d+)?)ms)?$/.exec(text?.trim() ?? "");
+  if (!m || !m.slice(1).some(Boolean)) return null;
+  return (Number(m[1] ?? 0) * 3600 + Number(m[2] ?? 0) * 60 + Number(m[3] ?? 0)) * 1000 + Number(m[4] ?? 0);
+}
+
+/**
+ * How long a 429 asks us to wait: Retry-After, else "try again in 7.6s" from the
+ * message (which names the limit actually hit, e.g. the daily one), else the
+ * per-minute token reset header.
+ */
+export function rateLimitWaitMs(headers: Headers, body: string): number | null {
+  return (
+    retryAfterMs(headers.get("retry-after")) ??
+    durationMs(/try again in ((?:\d+h)?(?:\d+m)?(?:[\d.]+s)?(?:[\d.]+ms)?)/i.exec(body)?.[1]) ??
+    durationMs(headers.get("x-ratelimit-reset-tokens"))
+  );
+}
+
+/** How long one request may keep waiting out per-minute rate limits before giving up. */
+const RATE_LIMIT_PATIENCE_MS = 120_000;
+
+async function upstream(url: string, init: RequestInit, label: string): Promise<Response> {
   let res: Response;
+  let errorText: string | undefined;
+  const giveUpAt = Date.now() + RATE_LIMIT_PATIENCE_MS;
   for (let attempt = 0; ; attempt++) {
     try {
       res = await fetch(url, init);
@@ -206,27 +382,40 @@ async function upstream(url: string, init: RequestInit, label: string, retries =
       if ((err as Error).name === "AbortError") throw new LlmError("Request cancelled.", 499, "aborted");
       throw new LlmError(`Couldn't reach ${label} at ${new URL(url).origin}.`, 502, "network");
     }
-    // Rate limited: wait as long as the server asks (up to a minute), then try again.
-    const wait = res.status === 429 ? retryAfterMs(res.headers.get("retry-after")) : null;
-    if (wait === null || wait > 65_000 || attempt >= retries) break;
-    await res.body?.cancel().catch(() => {});
-    await sleep(wait + 250, init.signal);
+    errorText = undefined;
+    if (res.status !== 429) break;
+    // Rate limited: wait as long as the server asks, and keep trying while the
+    // window is shared with other requests (writing and checking at once), up
+    // to a time budget. A wait longer than a minute means the quota is used up.
+    errorText = await res.text().catch(() => "");
+    const asked = rateLimitWaitMs(res.headers, errorText);
+    if (asked !== null && asked > 65_000) break;
+    const wait = (asked ?? 2_000 * 2 ** Math.min(attempt, 4)) + 250 + Math.random() * 750;
+    if (Date.now() + wait > giveUpAt) break;
+    await sleep(wait, init.signal);
   }
   if (!res.ok || !res.body) {
-    const detail = (await res.text().catch(() => "")).slice(0, 300);
+    const full = errorText ?? (await res.text().catch(() => ""));
+    const detail = full.slice(0, 300);
     const status =
       res.status === 401 || res.status === 403 ? 401 : res.status === 429 ? 429 : res.status === 404 ? 404 : res.status === 413 ? 413 : 502;
+    // A 429 we could not wait out (a daily limit, or a long wait) means this model is out of quota for now.
+    const wait = status === 429 ? rateLimitWaitMs(res.headers, full) : null;
+    const daily = status === 429 && /per day|\(TPD\)|\(RPD\)/i.test(full);
+    const quota = status === 429 && (daily || (wait !== null && wait > 65_000));
     const msg =
       status === 401
         ? `${label} rejected the API key.`
         : status === 429
-          ? `${label} rate limit reached (free plans allow only so many tokens per minute and per day). Try again shortly.`
+          ? quota
+            ? `${label} has used up this plan's ${daily ? "daily" : "current"} allowance for this model. ${wait ? `It frees up in about ${Math.max(1, Math.round(wait / 60_000))} min.` : "Try again later."} To avoid this, add another free provider (e.g. GEMINI_API_KEY) or upgrade the plan.`
+            : `${label} rate limit reached (free plans allow only so many tokens per minute and per day). Try again shortly.`
           : status === 413
             ? `${label}: this request is larger than your plan's per-minute token limit. Set LLM_TPM_LIMIT in .env.local to that limit.`
           : status === 404
             ? `${label}: model or endpoint not found. ${detail}`
             : `${label} error ${res.status}. ${detail}`;
-    throw new LlmError(msg.trim(), status, "upstream");
+    throw new LlmError(msg.trim(), status, quota ? "quota" : status === 429 ? "rate_limited" : "upstream", quota ? (wait ?? undefined) : undefined);
   }
   return res;
 }
@@ -245,7 +434,7 @@ async function* streamOpenAi(cfg: LlmConfig, opts: GenOptions): AsyncGenerator<s
     [isOpenAi ? "max_completion_tokens" : "max_tokens"]: fitToBudget(opts, cfg.tpmLimit),
   };
   if (!isOpenAi) body.temperature = 0.5;
-  if (cfg.reasoningEffort) body.reasoning_effort = cfg.reasoningEffort;
+  if (cfg.reasoningEffort) body.reasoning_effort = atLeast(cfg.reasoningEffort, opts.minEffort);
   let stopReason: "length" | "end" = "end";
   if (opts.json && cfg.jsonMode) body.response_format = { type: "json_object" };
   const res = await upstream(
@@ -296,7 +485,7 @@ function ollamaWindow(opts: GenOptions): { numCtx: number; numPredict: number } 
 
 async function* streamOllama(cfg: LlmConfig, opts: GenOptions): AsyncGenerator<string> {
   const { numCtx, numPredict } = ollamaWindow(opts);
-  const res = await upstream(
+  const request = () => upstream(
     `${cfg.baseUrl}/api/chat`,
     {
       method: "POST",
@@ -312,6 +501,17 @@ async function* streamOllama(cfg: LlmConfig, opts: GenOptions): AsyncGenerator<s
     },
     "Ollama",
   );
+  let res: Response;
+  try {
+    res = await request();
+  } catch (err) {
+    // Nothing listening: start Ollama on this computer and try once more.
+    if (!(err instanceof LlmError) || err.code !== "network") throw err;
+    const started = await startOllama(cfg.baseUrl);
+    if (started === "missing") throw new LlmError("The local model needs Ollama, which isn't installed (get it from ollama.com).", 502, "network");
+    if (started !== "started") throw new LlmError(`Ollama isn't running at ${cfg.baseUrl} and couldn't be started.`, 502, "network");
+    res = await request();
+  }
   for await (const line of lines(res.body!)) {
     if (!line.trim()) continue;
     try {
