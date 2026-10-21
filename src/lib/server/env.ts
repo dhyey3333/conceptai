@@ -4,6 +4,9 @@
  * only learns *whether* a capability is configured (see /api/status).
  */
 
+import type { Tier } from "@/lib/lesson/routing";
+
+export type { Tier };
 export type LlmProvider = "anthropic" | "openai" | "ollama";
 
 export interface LlmConfig {
@@ -21,27 +24,34 @@ const env = (k: string) => {
   return v ? v : undefined;
 };
 
-export function llmConfig(): LlmConfig | null {
-  let provider = env("LLM_PROVIDER")?.toLowerCase() as LlmProvider | undefined;
-  if (provider && !["anthropic", "openai", "ollama"].includes(provider)) provider = "openai";
-  if (!provider) {
-    if (env("ANTHROPIC_API_KEY")) provider = "anthropic";
-    else if (env("OPENAI_API_KEY")) provider = "openai";
-    else return null;
-  }
+/**
+ * Two model tiers. "best" (LLM_*) teaches college and advanced material and
+ * does the web research; "fast" (LLM_FAST_*) handles school-level topics at a
+ * fraction of the cost. On Claude the fast tier defaults to Sonnet; with any
+ * other single provider both tiers are the same model.
+ */
 
+const PROVIDERS: LlmProvider[] = ["anthropic", "openai", "ollama"];
+
+function parseProvider(v: string | undefined): LlmProvider | undefined {
+  const p = v?.toLowerCase();
+  if (!p) return undefined;
+  return (PROVIDERS as string[]).includes(p) ? (p as LlmProvider) : "openai";
+}
+
+function buildConfig(provider: LlmProvider, o: { apiKey?: string; baseUrl?: string; model?: string }): LlmConfig | null {
   const effortRaw = env("ANTHROPIC_EFFORT")?.toLowerCase();
   const effort = effortRaw === "low" || effortRaw === "high" ? effortRaw : "medium";
   const jsonMode = env("LLM_JSON_MODE")?.toLowerCase() !== "false";
 
   if (provider === "anthropic") {
-    const apiKey = env("LLM_API_KEY") ?? env("ANTHROPIC_API_KEY");
+    const apiKey = o.apiKey ?? env("ANTHROPIC_API_KEY");
     if (!apiKey && !env("ANTHROPIC_AUTH_TOKEN")) return null;
     return {
       provider,
       apiKey,
-      baseUrl: env("LLM_BASE_URL") ?? "",
-      model: env("LLM_MODEL") ?? "claude-opus-5-5",
+      baseUrl: o.baseUrl ?? "",
+      model: o.model ?? "claude-opus-5-5",
       jsonMode,
       effort,
       fallbacks: env("ANTHROPIC_FALLBACKS")?.toLowerCase() !== "off",
@@ -51,30 +61,69 @@ export function llmConfig(): LlmConfig | null {
   if (provider === "ollama") {
     return {
       provider,
-      apiKey: env("LLM_API_KEY"),
+      apiKey: o.apiKey,
       // Accept both http://host:11434 and the OpenAI-style http://host:11434/v1.
-      baseUrl: (env("LLM_BASE_URL") ?? env("OLLAMA_HOST") ?? "http://localhost:11434").replace(/\/v1\/?$/, "").replace(/\/$/, ""),
-      model: env("LLM_MODEL") ?? "llama3.1",
+      baseUrl: (o.baseUrl ?? env("OLLAMA_HOST") ?? "http://localhost:11434").replace(/\/v1\/?$/, "").replace(/\/$/, ""),
+      model: o.model ?? "llama3.1",
       jsonMode,
       effort,
       fallbacks: false,
     };
   }
 
-  const baseUrl = (env("LLM_BASE_URL") ?? "https://api.openai.com/v1").replace(/\/$/, "");
-  const apiKey = env("LLM_API_KEY") ?? env("OPENAI_API_KEY");
+  const baseUrl = (o.baseUrl ?? "https://api.openai.com/v1").replace(/\/$/, "");
+  const apiKey = o.apiKey ?? env("OPENAI_API_KEY");
   // A key is required for hosted APIs; local OpenAI-compatible servers often need none.
   const isLocal = /\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])/.test(baseUrl);
   if (!apiKey && !isLocal) return null;
-  return {
-    provider: "openai",
-    apiKey,
-    baseUrl,
-    model: env("LLM_MODEL") ?? "gpt-4o-mini",
-    jsonMode,
-    effort,
-    fallbacks: false,
-  };
+  return { provider: "openai", apiKey, baseUrl, model: o.model ?? "gpt-4o-mini", jsonMode, effort, fallbacks: false };
+}
+
+function bestConfig(): LlmConfig | null {
+  let provider = parseProvider(env("LLM_PROVIDER"));
+  if (!provider) {
+    if (env("ANTHROPIC_API_KEY")) provider = "anthropic";
+    else if (env("OPENAI_API_KEY")) provider = "openai";
+    else return null;
+  }
+  return buildConfig(provider, { apiKey: env("LLM_API_KEY"), baseUrl: env("LLM_BASE_URL"), model: env("LLM_MODEL") });
+}
+
+function fastConfig(best: LlmConfig): LlmConfig | null {
+  const provider = parseProvider(env("LLM_FAST_PROVIDER"));
+  const model = env("LLM_FAST_MODEL");
+  if (!provider && !model) {
+    // Claude default: Sonnet teaches the easy topics, unless the main model is already Sonnet or Haiku.
+    return best.provider === "anthropic" && !/sonnet|haiku/.test(best.model) ? { ...best, model: "claude-sonnet-5-5" } : null;
+  }
+  if (!provider || provider === best.provider) {
+    return {
+      ...best,
+      model: model ?? best.model,
+      apiKey: env("LLM_FAST_API_KEY") ?? best.apiKey,
+      baseUrl: env("LLM_FAST_BASE_URL") ?? best.baseUrl,
+    };
+  }
+  return buildConfig(provider, { apiKey: env("LLM_FAST_API_KEY"), baseUrl: env("LLM_FAST_BASE_URL"), model });
+}
+
+export function llmConfig(tier: Tier = "best"): LlmConfig | null {
+  const best = bestConfig();
+  if (!best || tier === "best") return best;
+  return fastConfig(best) ?? best;
+}
+
+/**
+ * Web research before teaching: Claude's web search when the main teacher is
+ * Claude, otherwise Wikipedia (free, no key). LLM_RESEARCH=off disables it.
+ */
+export type ResearchMode = "web" | "wikipedia" | "off";
+
+export function researchMode(): ResearchMode {
+  if (env("LLM_RESEARCH")?.toLowerCase() === "off") return "off";
+  const best = bestConfig();
+  if (!best) return "off";
+  return best.provider === "anthropic" ? "web" : "wikipedia";
 }
 
 export interface VoiceConfig {

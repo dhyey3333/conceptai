@@ -12,7 +12,7 @@ import { pageItems } from "@/lib/lesson/timeline";
 import type { Lesson } from "@/lib/lesson/types";
 import { useSettings } from "@/lib/settings";
 import { store } from "@/lib/store";
-import { cn, isTyping } from "@/lib/utils";
+import { cn, hostOf, isTyping, modelLabel } from "@/lib/utils";
 import { startListening, type ListenSession } from "@/lib/voice/listener";
 import { Whiteboard, type BoardEntry } from "@/components/board/Whiteboard";
 import { useShell } from "@/components/shell/AppShell";
@@ -196,6 +196,7 @@ function LessonView({ lesson, status, autostart }: { lesson: Lesson; status: Ser
   const viewingOther = !!s.viewSection && s.viewSection !== liveSection;
   const generatingIdx = sections.findIndex((x) => l.sections[x.id]?.status === "loading");
   const selected = entries.find((e) => e.key === selectedKey);
+  const researching = l.research?.status === "running";
 
   const askAboutSelection = () => {
     if (!selected) return;
@@ -296,9 +297,27 @@ function LessonView({ lesson, status, autostart }: { lesson: Lesson; status: Ser
           </span>
         </div>
         <div>
-          <div className="text-lg font-semibold text-fg">{l.outline ? "Preparing the first part…" : "Planning your lesson…"}</div>
+          <div className="text-lg font-semibold text-fg">
+            {researching ? "Researching the topic…" : l.outline ? "Preparing the first part…" : "Planning your lesson…"}
+          </div>
           <div className="mt-1 text-sm text-muted">{l.outline ? `“${l.outline.sections[0]?.title}”` : `Topic: ${l.topic}`}</div>
         </div>
+        {researching && (
+          <div className="max-w-md space-y-2 text-[12px]">
+            {l.research?.queries.map((q, i) => (
+              <div key={i} className="animate-fade-in text-muted">
+                Searching “{q}”
+              </div>
+            ))}
+            <div className="flex flex-wrap justify-center gap-1.5">
+              {l.research?.sources.map((src) => (
+                <span key={src.url} className="animate-fade-in rounded-full border border-line-strong bg-surface/80 px-2 py-0.5 text-subtle">
+                  {hostOf(src.url)}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
         {sections.length > 0 && l.sections[sections[0].id]?.status === "error" && (
           <Button className="pointer-events-auto" onClick={() => session.retrySection(0)}>
             <RotateCcw size={14} /> Retry: {l.sections[sections[0].id].error}
@@ -348,9 +367,27 @@ function LessonView({ lesson, status, autostart }: { lesson: Lesson; status: Ser
             {l.outline?.subject && <span className="rounded-md bg-white/[0.06] px-1.5 py-0.5 text-[11px] text-muted">{l.outline.subject}</span>}
             {l.sample && <span className="rounded-md bg-accent-2/15 px-1.5 py-0.5 text-[11px] text-accent-2">Sample</span>}
             <h1 className="truncate text-[15px] font-semibold">{l.outline?.title ?? l.topic}</h1>
+            {l.model && (
+              <span className="hidden shrink-0 rounded-md border border-line-strong px-1.5 py-0.5 text-[11px] text-muted sm:inline" title="Model teaching this lesson">
+                {modelLabel(l.model)}
+              </span>
+            )}
+            {l.research?.status === "done" && (
+              <button
+                onClick={() => setTab("outline")}
+                className="hidden shrink-0 rounded-md bg-accent-2/15 px-1.5 py-0.5 text-[11px] text-accent-2 hover:bg-accent-2/25 sm:inline"
+                title="Taught from sources found before the lesson; see them in the Outline tab"
+              >
+                Researched · {l.research.sources.length} source{l.research.sources.length === 1 ? "" : "s"}
+              </button>
+            )}
           </div>
           <div className="mt-0.5 flex items-center gap-2 text-[12px] text-subtle">
-            {l.status === "outlining" ? (
+            {researching ? (
+              <>
+                <Spinner size={12} /> Researching{l.research?.queries.length ? `: “${l.research.queries[l.research.queries.length - 1]}”` : "…"}
+              </>
+            ) : l.status === "outlining" ? (
               <>
                 <Spinner size={12} /> Planning the lesson…
               </>

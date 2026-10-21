@@ -1,6 +1,6 @@
 import type { Depth, Language, Level, Outline } from "@/lib/lesson/types";
 
-const LEVEL_TEXT: Record<Level, string> = {
+export const LEVEL_TEXT: Record<Level, string> = {
   school:
     "a Class 6–10 school student. Use simple words and everyday examples, define every new term, and keep the maths gentle.",
   senior:
@@ -76,16 +76,17 @@ const TEACHING_RULES = `HOW YOU TEACH
 5. Point out common mistakes and exam tips where they matter.
 6. Be accurate. Never invent facts, formulas or data.`;
 
-export function outlinePrompt(input: { topic: string; level: Level; language: Language; depth: Depth; sourceText?: string }) {
+export function outlinePrompt(input: { topic: string; level: Level; language: Language; depth: Depth; sourceText?: string; research?: string }) {
   const plan = DEPTH_PLAN[input.depth];
   const system = `${persona(input.level, input.language)}
 
 You are planning a whiteboard lesson. Design a clear teaching arc: hook and intuition, core definitions and concepts, the main principle (with derivation where the subject has one), worked example(s), applications and common misconceptions, and a short recap.
 
 Return only a JSON object, no prose:
-{"title":"lesson title (max 8 words)","subject":"e.g. Physics","summary":"one sentence on what the student will understand","objectives":["3 or 4 concrete learning outcomes"],"sections":[{"title":"short section title","goal":"what this section teaches AND what to draw (a diagram, graph, flowchart, derivation or worked example)"}]}
+{"title":"lesson title (max 8 words)","subject":"e.g. Physics","difficulty":"basic|intermediate|advanced","summary":"one sentence on what the student will understand","objectives":["3 or 4 concrete learning outcomes"],"sections":[{"title":"short section title","goal":"what this section teaches AND what to draw (a diagram, graph, flowchart, derivation or worked example)"}]}
+"difficulty" rates the topic itself: "advanced" means graduate or specialist material (e.g. measure theory, control-system design, quantum field theory); "basic" means school-level ideas.
 Plan exactly ${plan.sections} sections. Section titles and goals must be in English.`;
-  const user = `Topic: ${input.topic}${sourceBlock(input.sourceText, 6000)}`;
+  const user = `Topic: ${input.topic}${researchBlock(input.research, 4000)}${sourceBlock(input.sourceText, 6000)}`;
   return { system, user };
 }
 
@@ -97,6 +98,7 @@ export function sectionPrompt(input: {
   outline: Outline;
   sectionIndex: number;
   sourceText?: string;
+  research?: string;
 }) {
   const { outline, sectionIndex: i } = input;
   const section = outline.sections[i];
@@ -122,7 +124,7 @@ ${outlineText}
 
 Now teach section ${i + 1} of ${outline.sections.length}: "${section.title}". Goal: ${section.goal}
 ${position}${ending}
-Write ${DEPTH_PLAN[input.depth].beats} beats.${sourceBlock(input.sourceText, 5000)}`;
+Write ${DEPTH_PLAN[input.depth].beats} beats.${researchBlock(input.research, 3500)}${sourceBlock(input.sourceText, 5000)}`;
   return { system, user };
 }
 
@@ -136,6 +138,7 @@ export interface AskContext {
   recentNarration: string[];
   board: string;
   chat: { role: "user" | "teacher"; text: string }[];
+  research?: string;
 }
 
 export function askPrompt(input: { context: AskContext; question: string; mode: "question" | "simpler" | "example" | "about"; about?: string }) {
@@ -175,8 +178,20 @@ function contextBlock(c: AskContext): string {
     c.chat.length
       ? `EARLIER QUESTIONS IN THIS LESSON:\n${c.chat.map((m) => `${m.role === "user" ? "Student" : "Teacher"}: ${m.text}`).join("\n")}`
       : "",
+    researchBlock(c.research, 2500).trim(),
   ];
   return parts.filter(Boolean).join("\n\n");
+}
+
+/** Facts gathered from the web before the lesson; preferred over the model's memory. */
+function researchBlock(research: string | undefined, maxChars: number): string {
+  if (!research?.trim()) return "";
+  return `
+
+RESEARCH BRIEF (gathered from the web for this lesson; where it differs from what you remember, trust it; do not mention it):
+<research>
+${research.slice(0, maxChars)}
+</research>`;
 }
 
 function sourceBlock(source: string | undefined, maxChars: number): string {
@@ -203,6 +218,8 @@ export function notesPrompt(input: {
   outline?: string;
   sourceText?: string;
   sourceNames?: string[];
+  research?: string;
+  references?: { title: string; url: string }[];
 }) {
   const marks = [...input.marks].sort((a, b) => a - b);
   const system = `You are an expert teacher and exam-paper setter. Write comprehensive, exam-ready study notes in Markdown for ${LEVEL_TEXT[input.level]}
@@ -227,16 +244,22 @@ Formatting rules:
 - Maths uses KaTeX syntax: inline $...$ and display $$...$$ on their own lines. Use \\begin{aligned} for multi-line work. No HTML.
 - Diagrams: for processes, cycles, hierarchies and classifications use a fenced \`\`\`mermaid block (flowchart TD or LR; put labels with spaces or symbols in quotes, e.g. A["Light energy"]). For geometry, physics setups and graphs use a fenced \`\`\`diagram block holding ONE JSON whiteboard item (a "figure" with shapes, or a "plot"), from this specification:
 ${BOARD_SPEC.split("\n").filter((l) => /figure|plot|shape|Figure coordinates|expr uses/.test(l)).join("\n")}
-- Be accurate and complete; do not pad. Check every numerical answer.`;
+- Be accurate and complete; do not pad. Check every numerical answer.${
+    input.references?.length
+      ? `\n- End with a "## References" section listing exactly these sources as Markdown links (do not add others):\n${input.references
+          .map((r) => `  - [${r.title.replace(/[[\]]/g, "")}](${r.url})`)
+          .join("\n")}`
+      : ""
+  }`;
   const user = `Topic: ${input.topic}${input.outline ? `\n\nThe student just learned this lesson outline; cover all of it:\n${input.outline}` : ""}${
     input.sourceText?.trim()
       ? `\n\nSOURCE MATERIAL${input.sourceNames?.length ? ` (${input.sourceNames.join(", ")})` : ""}: treat it as the syllabus. Cover every topic and unit it lists, follow its terminology and order, and give extra depth where it puts emphasis.\n<source>\n${input.sourceText.slice(0, 40000)}\n</source>`
       : ""
-  }`;
+  }${researchBlock(input.research, 6000)}`;
   return { system, user };
 }
 
-export function quizPrompt(input: { topic: string; level: Level; outline?: string; recent?: string }) {
+export function quizPrompt(input: { topic: string; level: Level; outline?: string; recent?: string; research?: string }) {
   const system = `You are an expert examiner creating practice questions for ${LEVEL_TEXT[input.level]}
 Return only a JSON object, no prose:
 {"mcq":[{"q":"question","options":["A","B","C","D"],"answer":0,"explanation":"why the right option is right and the tempting wrong one is wrong"}],
@@ -244,6 +267,6 @@ Return only a JSON object, no prose:
  "short":[{"q":"question","marks":2,"answer":"model answer"}]}
 Write 5 MCQs (answer = index of the correct option; mix conceptual and applied; plausible distractors), 2 or 3 numerical problems whenever the topic involves any formula or calculation (most maths, science, engineering and economics topics; leave the list empty only for purely descriptive topics), and 3 short-answer questions (2 or 5 marks). A numerical "answer" is a plain number; put the unit in "unit".
 Use $...$ for inline maths (double every backslash inside JSON strings). Solve every problem yourself and make sure the stated answers are correct.`;
-  const user = `Topic: ${input.topic}${input.outline ? `\nLesson outline:\n${input.outline}` : ""}${input.recent ? `\nWhat was taught:\n${input.recent}` : ""}`;
+  const user = `Topic: ${input.topic}${input.outline ? `\nLesson outline:\n${input.outline}` : ""}${input.recent ? `\nWhat was taught:\n${input.recent}` : ""}${researchBlock(input.research, 3000)}`;
   return { system, user };
 }

@@ -24,7 +24,19 @@ import { store } from "@/lib/store";
 import { browserSpeechAvailable, BrowserSpeaker, CloudSpeaker, pickVoice, silentSpeak, silentSpeaker, type SpeakHandle, type Speaker } from "@/lib/voice/speaker";
 import { PausableTimer } from "@/lib/voice/timer";
 import { buildTimeline, isGenerating, pageItems, START_KEY, type TimelineBeat } from "./timeline";
-import { newId, type AskMode, type ChatMessage, type Lesson, type Note, type Outline, type QaEntry, type Stroke } from "./types";
+import {
+  newId,
+  type AskMode,
+  type ChatMessage,
+  type Lesson,
+  type Note,
+  type Outline,
+  type QaEntry,
+  type ResearchState,
+  type Source,
+  type Stroke,
+  type Tier,
+} from "./types";
 
 export type Phase = "idle" | "playing" | "paused" | "buffering" | "ended";
 
@@ -65,6 +77,7 @@ function normalise(lesson: Lesson): Lesson {
   return {
     ...lesson,
     status: lesson.status === "outlining" ? "new" : lesson.status,
+    research: lesson.research?.status === "running" ? undefined : lesson.research,
     sections,
     qa: lesson.qa.filter((q) => q.beats.length).map((q) => (q.status === "loading" ? { ...q, status: "ready" } : q)),
     chat: lesson.chat.map((m) => (m.pending ? { ...m, pending: false } : m)),
@@ -206,6 +219,8 @@ export class LessonSession {
     this.chainRunning = true;
     try {
       if (!this.state.lesson.outline) {
+        if (!this.state.lesson.research) await this.research();
+        if (this.destroyed) return;
         const ok = await this.generateOutline();
         if (!ok) return;
       }
@@ -232,14 +247,63 @@ export class LessonSession {
     return a;
   }
 
+  /**
+   * Look the topic up before planning (college+ levels, or when asked). The
+   * server decides whether it's needed; failures never block the lesson.
+   */
+  private async research() {
+    const l = this.state.lesson;
+    const patch = (r: Partial<ResearchState>) =>
+      this.updateLesson((x) => ({ ...x, research: { sources: [], queries: [], status: "running", ...x.research, ...r } }), "none");
+    patch({ status: "running", sources: [], queries: [] });
+    const ctrl = this.track();
+    try {
+      await streamNdjson(
+        "/api/lesson/research",
+        { topic: l.topic, level: l.level, pref: l.researchPref ?? "auto", tierPref: l.tierPref ?? "auto" },
+        (ev) => {
+          const cur = this.state.lesson.research;
+          if (ev.type === "search") patch({ queries: [...(cur?.queries ?? []), String(ev.query)].slice(-6) });
+          else if (ev.type === "source") patch({ sources: [...(cur?.sources ?? []), ev.source as Source].slice(0, 8) });
+          else if (ev.type === "skipped") patch({ status: "skipped" });
+          else if (ev.type === "done") {
+            const r = ev.research as { brief: string; sources: Source[]; provider: "web" | "wikipedia" };
+            patch({ status: "done", brief: r.brief, sources: r.sources, provider: r.provider });
+          }
+        },
+        ctrl.signal,
+      );
+      if (this.state.lesson.research?.status === "running") patch({ status: "skipped" });
+    } catch (e) {
+      if ((e as Error).name === "AbortError") return;
+      patch({ status: "error", error: e instanceof Error ? e.message : "Research failed." });
+    } finally {
+      this.aborts.delete(ctrl);
+    }
+  }
+
+  /** Model tier and research brief that every later request for this lesson carries. */
+  private grounding() {
+    const l = this.state.lesson;
+    return { tier: l.tier, research: l.research?.status === "done" ? l.research.brief : undefined };
+  }
+
   private async generateOutline(): Promise<boolean> {
     const l = this.state.lesson;
     this.updateLesson((x) => ({ ...x, status: "outlining", error: undefined }), "none");
     const ctrl = this.track();
     try {
-      const { outline } = await postJson<{ outline: Outline }>(
+      const { outline, tier, model, difficulty } = await postJson<{ outline: Outline; tier?: Tier; model?: string; difficulty?: string }>(
         "/api/lesson/outline",
-        { topic: l.topic, level: l.level, language: l.language, depth: l.depth, sourceText: l.sourceText },
+        {
+          topic: l.topic,
+          level: l.level,
+          language: l.language,
+          depth: l.depth,
+          sourceText: l.sourceText,
+          tierPref: l.tierPref ?? "auto",
+          research: this.grounding().research,
+        },
         ctrl.signal,
       );
       this.updateLesson(
@@ -247,6 +311,9 @@ export class LessonSession {
           ...x,
           status: "ready",
           outline,
+          tier,
+          model,
+          difficulty,
           sections: Object.fromEntries(outline.sections.map((s) => [s.id, { status: "pending" as const, beats: [] }])),
         }),
         "now",
@@ -273,7 +340,7 @@ export class LessonSession {
     try {
       await streamNdjson(
         "/api/lesson/section",
-        { topic: l.topic, level: l.level, language: l.language, depth: l.depth, outline, sectionIndex: i, sourceText: l.sourceText },
+        { topic: l.topic, level: l.level, language: l.language, depth: l.depth, outline, sectionIndex: i, sourceText: l.sourceText, ...this.grounding() },
         (ev) => {
           if (ev.type === "beat") {
             beats.push(ev.beat as (typeof beats)[number]);
@@ -344,6 +411,8 @@ export class LessonSession {
       sources: l.sourceName ? [{ name: l.sourceName, chars: l.sourceText?.length ?? 0 }] : undefined,
       sourceText: l.sourceText,
       outline: this.outlineText(),
+      ...this.grounding(),
+      references: l.research?.status === "done" ? l.research.sources : undefined,
       status: "generating",
       createdAt: now,
       updatedAt: now,
@@ -356,6 +425,8 @@ export class LessonSession {
       outline: this.outlineText(),
       sourceText: l.sourceText,
       sourceNames: l.sourceName ? [l.sourceName] : undefined,
+      ...this.grounding(),
+      references: note.references,
     });
     return note.id;
   }
@@ -376,7 +447,13 @@ export class LessonSession {
         .slice(0, 7000);
       const { quiz } = await postJson<{ quiz: Quiz }>(
         "/api/quiz",
-        { topic: l.outline?.title ?? l.topic, level: l.level, outline: this.outlineText() || undefined, recent: recent || undefined },
+        {
+          topic: l.outline?.title ?? l.topic,
+          level: l.level,
+          outline: this.outlineText() || undefined,
+          recent: recent || undefined,
+          ...this.grounding(),
+        },
         ctrl.signal,
       );
       this.updateLesson((x) => ({ ...x, quiz }), "now");
@@ -677,6 +754,7 @@ export class LessonSession {
         .filter((m) => m.text && !m.error && !m.pending)
         .slice(-6)
         .map((m) => ({ role: m.role, text: m.text.slice(0, 1400) })),
+      research: this.grounding().research?.slice(0, 4000),
     };
   }
 
@@ -775,7 +853,7 @@ export class LessonSession {
     try {
       await streamNdjson(
         "/api/ask",
-        { context, question: question.slice(0, 1000), mode: opts.about ? "about" : mode, about: opts.about?.summary },
+        { context, question: question.slice(0, 1000), mode: opts.about ? "about" : mode, about: opts.about?.summary, tier: this.grounding().tier },
         (ev) => {
           if (ev.type !== "beat") return;
           beats.push(ev.beat as (typeof beats)[number]);

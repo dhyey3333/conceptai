@@ -47,6 +47,21 @@ Claude requests enable Anthropic's server-side refusal **fallbacks** (`fallbacks
 
 Without an LLM the app still runs: samples, whiteboard, voice and notes editing work, and generation buttons explain what to configure.
 
+### Model routing and research
+
+ConceptAI is meant to teach *any* concept, from Class 6 science to master's-level engineering, so it uses two model tiers and looks things up when it matters:
+
+| Lesson | Teacher | Research first |
+|---|---|---|
+| School, Senior / JEE-NEET | fast tier (Claude Sonnet 5.5 by default) | no (unless "Always") |
+| College, Advanced | best tier (`LLM_MODEL`, Claude Opus 5.5 by default) | yes |
+| Any level whose plan rates the topic "advanced" | escalated to the best tier | as above |
+
+* The learner can override both on the dashboard (Teacher: Auto / fast / best; Research: Auto / Always / Off).
+* **Research** with Claude uses Anthropic's server-side web search tool (`web_search_20260209`, up to 4 searches, resumed on `pause_turn`); the briefing and its sources are fed into the plan, every lesson part, follow-up answers, quizzes and the notes (which end with a References section). With other providers it reads Wikipedia instead. `LLM_RESEARCH=off` disables it.
+* The fast tier can be a different provider, e.g. local Ollama for school topics and Claude for the rest: `LLM_FAST_PROVIDER=ollama`, `LLM_FAST_MODEL=qwen3:4b-instruct`.
+* Claude calls cache the long system prompt (`cache_control`), so every part after the first reads it at the cache rate.
+
 ### Optional: AI voice, AI transcription, cloud persistence
 
 | Feature | Variables | Fallback without them |

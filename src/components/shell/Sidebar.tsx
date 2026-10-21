@@ -7,7 +7,7 @@ import { BookOpen, House, NotebookPen, Plus, Trash, X } from "lucide-react";
 import { fetchStatus, type ServerStatus } from "@/lib/api";
 import { store } from "@/lib/store";
 import { useLists } from "@/lib/useLists";
-import { cn, timeAgo } from "@/lib/utils";
+import { cn, modelLabel, timeAgo } from "@/lib/utils";
 import { Logo } from "@/components/ui";
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
@@ -90,8 +90,9 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <div className="flex items-center gap-2">
           <span className={cn("h-2 w-2 rounded-full", status?.llm.configured ? "bg-ok" : status ? "bg-warn" : "bg-subtle")} />
           {status?.llm.configured ? (
-            <span className="truncate" title={status.llm.model}>
-              AI: {providerName(status.llm.provider)} · {status.llm.model}
+            <span className="truncate" title={status.llm.fast ? `Easy topics: ${modelLabel(status.llm.fast.model)}` : status.llm.model}>
+              AI: {status.llm.provider === "anthropic" ? modelLabel(status.llm.model) : `${providerName(status.llm.provider)} · ${status.llm.model}`}
+              {status.llm.fast ? ` + ${modelLabel(status.llm.fast.model).replace(/^Claude /, "")}` : ""}
             </span>
           ) : status ? (
             <span>AI not configured (samples only)</span>
@@ -103,6 +104,12 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           <span className={cn("h-2 w-2 rounded-full", status?.tts.configured ? "bg-ok" : "bg-subtle")} />
           Voice: {status?.tts.configured ? `AI (${status.tts.provider})` : "browser"}
         </div>
+        {status?.llm.configured && (
+          <div className="flex items-center gap-2">
+            <span className={cn("h-2 w-2 rounded-full", status.llm.research === "off" ? "bg-subtle" : "bg-ok")} />
+            Research: {status.llm.research === "web" ? "web search" : status.llm.research === "wikipedia" ? "Wikipedia" : "off"}
+          </div>
+        )}
         {storage && (
           <div className="flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-subtle" />

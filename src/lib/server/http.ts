@@ -123,3 +123,9 @@ export const OutlineSchema = z.object({
   objectives: z.array(z.string().max(300)).max(8),
   sections: z.array(z.object({ id: z.string().max(20), title: z.string().max(200), goal: z.string().max(600) })).min(1).max(10),
 });
+
+export const TierSchema = z.enum(["fast", "best"]).optional().catch(undefined);
+export const TierPrefSchema = z.enum(["auto", "fast", "best"]).catch("auto");
+export const ResearchPrefSchema = z.enum(["auto", "on", "off"]).catch("auto");
+/** The research brief the client got from /api/lesson/research, sent back with later requests. */
+export const ResearchTextSchema = z.string().max(12_000).optional();

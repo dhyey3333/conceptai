@@ -8,7 +8,7 @@
  *              (its OpenAI shim is stuck at the model default) and force JSON.
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { llmConfig, type LlmConfig } from "./env";
+import { llmConfig, type LlmConfig, type Tier } from "./env";
 
 export interface ChatMsg {
   role: "user" | "assistant";
@@ -22,6 +22,8 @@ export interface GenOptions {
   /** Ask for a single JSON object (JSON mode where the provider supports it). */
   json?: boolean;
   signal?: AbortSignal;
+  /** Which model tier answers: "fast" for easy material, "best" (default) for hard. */
+  tier?: Tier;
 }
 
 export class LlmError extends Error {
@@ -39,8 +41,8 @@ export function isRetriable(err: unknown): boolean {
   return err instanceof LlmError && err.status === 502;
 }
 
-export function requireLlm(): LlmConfig {
-  const cfg = llmConfig();
+export function requireLlm(tier: Tier = "best"): LlmConfig {
+  const cfg = llmConfig(tier);
   if (!cfg) {
     throw new LlmError(
       "No AI provider is configured. Add LLM_PROVIDER and LLM_API_KEY to .env.local (see .env.example).",
@@ -52,7 +54,7 @@ export function requireLlm(): LlmConfig {
 }
 
 export async function* streamText(opts: GenOptions): AsyncGenerator<string> {
-  const cfg = requireLlm();
+  const cfg = requireLlm(opts.tier);
   if (cfg.provider === "anthropic") yield* streamAnthropic(cfg, opts);
   else if (cfg.provider === "ollama") yield* streamOllama(cfg, opts);
   else yield* streamOpenAi(cfg, opts);
@@ -68,37 +70,59 @@ export async function completeText(opts: GenOptions): Promise<string> {
 // Claude
 // ---------------------------------------------------------------------------
 
-let anthropicClient: Anthropic | null = null;
-let anthropicKeyFor = "";
+const anthropicClients = new Map<string, Anthropic>();
 
-function anthropic(cfg: LlmConfig): Anthropic {
+export function anthropic(cfg: LlmConfig): Anthropic {
   const sig = `${cfg.apiKey ?? ""}|${cfg.baseUrl}`;
-  if (!anthropicClient || anthropicKeyFor !== sig) {
-    anthropicClient = new Anthropic({
+  let client = anthropicClients.get(sig);
+  if (!client) {
+    client = new Anthropic({
       ...(cfg.apiKey ? { apiKey: cfg.apiKey } : {}),
       ...(cfg.baseUrl ? { baseURL: cfg.baseUrl } : {}),
       maxRetries: 2,
     });
-    anthropicKeyFor = sig;
+    anthropicClients.set(sig, client);
   }
-  return anthropicClient;
+  return client;
+}
+
+/** Request fields every Claude call shares: effort, and server-side refusal fallbacks. */
+export function claudeExtras(cfg: LlmConfig) {
+  // Haiku has no server-side fallback; older Haiku also rejects `effort`.
+  const useFallbacks = cfg.fallbacks && !cfg.model.includes("haiku");
+  const useEffort = !/haiku-4|claude-3/.test(cfg.model);
+  return {
+    ...(useEffort ? { output_config: { effort: cfg.effort } } : {}),
+    ...(useFallbacks ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
+  };
+}
+
+/** Map SDK errors (most specific first) to messages the UI can show. */
+export function claudeError(err: unknown, cfg: LlmConfig): unknown {
+  if (err instanceof LlmError) return err;
+  if (err instanceof Anthropic.AuthenticationError) return new LlmError("The Anthropic API key was rejected.", 401, "auth");
+  if (err instanceof Anthropic.PermissionDeniedError) return new LlmError("This API key can't use that model.", 403, "permission");
+  if (err instanceof Anthropic.NotFoundError) return new LlmError(`Model "${cfg.model}" was not found.`, 404, "model_not_found");
+  if (err instanceof Anthropic.RateLimitError) return new LlmError("Rate limited by Anthropic. Try again in a moment.", 429, "rate_limited");
+  if (err instanceof Anthropic.APIUserAbortError) return new LlmError("Request cancelled.", 499, "aborted");
+  if (err instanceof Anthropic.APIConnectionError) return new LlmError("Couldn't reach the Anthropic API.", 502, "network");
+  if (err instanceof Anthropic.BadRequestError) return new LlmError(`Anthropic rejected the request: ${err.message}`, 400, "bad_request");
+  if (err instanceof Anthropic.APIError) return new LlmError(`Anthropic API error (${err.status ?? "unknown"}).`, 502, "upstream");
+  return err;
 }
 
 async function* streamAnthropic(cfg: LlmConfig, opts: GenOptions): AsyncGenerator<string> {
   const client = anthropic(cfg);
-  const isHaiku = cfg.model.includes("haiku");
-  // Haiku has no server-side fallback; older Haiku also rejects `effort`.
-  const useFallbacks = cfg.fallbacks && !isHaiku;
-  const useEffort = !/haiku-4|claude-3/.test(cfg.model);
   try {
     const stream = client.beta.messages.stream(
       {
         model: cfg.model,
         max_tokens: opts.maxTokens,
-        system: opts.system,
+        // The system prompt (persona + board language) is identical for every
+        // part of a lesson, so cache it; repeat calls read it at the cache rate.
+        system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }],
         messages: opts.messages,
-        ...(useEffort ? { output_config: { effort: cfg.effort } } : {}),
-        ...(useFallbacks ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
+        ...claudeExtras(cfg),
       },
       { signal: opts.signal },
     );
@@ -110,16 +134,7 @@ async function* streamAnthropic(cfg: LlmConfig, opts: GenOptions): AsyncGenerato
       throw new LlmError("The model declined this request. Try rephrasing the topic.", 422, "refusal");
     }
   } catch (err) {
-    if (err instanceof LlmError) throw err;
-    if (err instanceof Anthropic.AuthenticationError) throw new LlmError("The Anthropic API key was rejected.", 401, "auth");
-    if (err instanceof Anthropic.PermissionDeniedError) throw new LlmError("This API key can't use that model.", 403, "permission");
-    if (err instanceof Anthropic.NotFoundError) throw new LlmError(`Model "${cfg.model}" was not found.`, 404, "model_not_found");
-    if (err instanceof Anthropic.RateLimitError) throw new LlmError("Rate limited by Anthropic. Try again in a moment.", 429, "rate_limited");
-    if (err instanceof Anthropic.APIUserAbortError) throw new LlmError("Request cancelled.", 499, "aborted");
-    if (err instanceof Anthropic.APIConnectionError) throw new LlmError("Couldn't reach the Anthropic API.", 502, "network");
-    if (err instanceof Anthropic.BadRequestError) throw new LlmError(`Anthropic rejected the request: ${err.message}`, 400, "bad_request");
-    if (err instanceof Anthropic.APIError) throw new LlmError(`Anthropic API error (${err.status ?? "unknown"}).`, 502, "upstream");
-    throw err;
+    throw claudeError(err, cfg);
   }
 }
 

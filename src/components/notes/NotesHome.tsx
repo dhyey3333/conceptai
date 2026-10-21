@@ -7,6 +7,9 @@ import { FileText, NotebookPen, Search, TriangleAlert } from "lucide-react";
 import { fetchStatus, type ServerStatus } from "@/lib/api";
 import { LEVELS, newId, type Level, type Note } from "@/lib/lesson/types";
 import { generateNote, settleNote } from "@/lib/notes/generate";
+import { shouldResearch, type ResearchPref } from "@/lib/lesson/routing";
+import { streamNdjson } from "@/lib/api";
+import type { Source as WebSource } from "@/lib/lesson/types";
 import { onStoreChange, store } from "@/lib/store";
 import { cn, timeAgo } from "@/lib/utils";
 import { Button, Chip, Spinner } from "@/components/ui";
@@ -22,6 +25,8 @@ export function NotesHome() {
   const [marks, setMarks] = useState<number[]>([2, 5, 10, 15]);
   const [sources, setSources] = useState<Source[]>([]);
   const [busy, setBusy] = useState(false);
+  const [researchPref, setResearchPref] = useState<ResearchPref>("auto");
+  const [progress, setProgress] = useState<string | null>(null);
   const [notes, setNotes] = useState<Note[] | null>(null);
   const [query, setQuery] = useState("");
 
@@ -48,6 +53,7 @@ export function NotesHome() {
   }, [notes, query]);
 
   const llm = status?.llm.configured;
+  const researchMode = status?.llm.research ?? "off";
   const canGenerate = llm && marks.length > 0 && (topic.trim().length >= 2 || sources.length > 0);
 
   const generate = async () => {
@@ -56,6 +62,21 @@ export function NotesHome() {
     const now = Date.now();
     const title = topic.trim() || sources[0]?.name.replace(/\.[^.]+$/, "") || "Notes";
     const sourceText = sources.length ? sources.map((s) => `### ${s.name}\n${s.text}`).join("\n\n").slice(0, 60_000) : undefined;
+    // Look the topic up first (College/Advanced, or when asked); never block the notes on it.
+    let research: { brief: string; sources: WebSource[] } | undefined;
+    if (researchMode !== "off" && shouldResearch(researchPref, level) && topic.trim()) {
+      setProgress("Researching…");
+      try {
+        let found = 0;
+        await streamNdjson("/api/lesson/research", { topic: title, level, pref: researchPref, tierPref: "auto" }, (ev) => {
+          if (ev.type === "source") setProgress(`Researching… ${++found} source${found === 1 ? "" : "s"}`);
+          if (ev.type === "done") research = ev.research as typeof research;
+        });
+      } catch {
+        /* write the notes from the model's own knowledge */
+      }
+      setProgress(null);
+    }
     const note: Note = {
       id: newId("n"),
       title: `${title}: Exam Notes`,
@@ -65,6 +86,8 @@ export function NotesHome() {
       content: "",
       sources: sources.map((s) => ({ name: s.name, chars: s.chars })),
       sourceText,
+      research: research?.brief,
+      references: research?.sources,
       status: "generating",
       createdAt: now,
       updatedAt: now,
@@ -77,6 +100,8 @@ export function NotesHome() {
       marks: note.marks,
       sourceText,
       sourceNames: sources.map((s) => s.name),
+      research: research?.brief,
+      references: research?.sources,
     });
     router.push(`/notes/${note.id}`);
   };
@@ -132,13 +157,31 @@ export function NotesHome() {
               ))}
             </div>
           </div>
+          {researchMode !== "off" && (
+            <div className="mt-4">
+              <div className="mb-1.5 text-[12px] font-medium uppercase tracking-wider text-subtle">
+                Research {researchMode === "web" ? "on the web" : "on Wikipedia"} first
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Chip active={researchPref === "auto"} onClick={() => setResearchPref("auto")} title="For College and Advanced levels">
+                  Auto
+                </Chip>
+                <Chip active={researchPref === "on"} onClick={() => setResearchPref("on")}>
+                  Always
+                </Chip>
+                <Chip active={researchPref === "off"} onClick={() => setResearchPref("off")}>
+                  Off
+                </Chip>
+              </div>
+            </div>
+          )}
           <div className="mt-4">
             <div className="mb-1.5 text-[12px] font-medium uppercase tracking-wider text-subtle">Syllabus, PDFs, slides (optional)</div>
             <SourceUpload sources={sources} onChange={setSources} multiple label="Upload PDF / PPTX / DOCX / TXT" />
             <p className="mt-1.5 text-[12px] text-subtle">Notes will follow your syllabus: every unit it lists, in its order and terminology.</p>
           </div>
           <Button className="mt-5 w-full" variant="primary" size="lg" loading={busy} disabled={!canGenerate} onClick={() => void generate()}>
-            Generate exam notes
+            {progress ?? "Generate exam notes"}
           </Button>
           <p className="mt-2 text-center text-[12px] text-subtle">Includes definitions, formulas, derivations, diagrams, worked examples and important questions.</p>
         </section>

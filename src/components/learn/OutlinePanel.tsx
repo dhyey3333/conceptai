@@ -1,8 +1,8 @@
 "use client";
 
-import { Check, CircleX, RotateCcw } from "lucide-react";
+import { Check, CircleX, ExternalLink, Globe, RotateCcw } from "lucide-react";
 import type { LessonSession, SessionState } from "@/lib/lesson/session";
-import { cn } from "@/lib/utils";
+import { cn, hostOf } from "@/lib/utils";
 import { Spinner } from "@/components/ui";
 
 export function OutlinePanel({ s, session }: { s: SessionState; session: LessonSession }) {
@@ -93,6 +93,40 @@ export function OutlinePanel({ s, session }: { s: SessionState; session: LessonS
           })}
         </ol>
       </div>
+      {s.lesson.research?.status === "done" && !!s.lesson.research.sources.length && (
+        <div>
+          <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-subtle">
+            <Globe size={12} /> Sources the teacher read
+          </div>
+          <ul className="space-y-1">
+            {s.lesson.research.sources.map((src) => (
+              <li key={src.url}>
+                <a
+                  href={src.url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="group flex items-start gap-2 rounded-lg px-2 py-1.5 text-[13px] hover:bg-white/[0.04]"
+                >
+                  <ExternalLink size={12} className="mt-1 shrink-0 text-subtle group-hover:text-accent-strong" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-fg/90">{src.title}</span>
+                    <span className="block truncate text-[11px] text-subtle">{hostOf(src.url)}</span>
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+          {s.lesson.research.brief && (
+            <details className="mt-2 rounded-lg bg-white/[0.03] px-3 py-2">
+              <summary className="cursor-pointer text-[12px] text-muted">What the teacher read before the lesson</summary>
+              <p className="mt-2 whitespace-pre-wrap text-[12px] leading-relaxed text-subtle">{s.lesson.research.brief}</p>
+            </details>
+          )}
+        </div>
+      )}
+      {s.lesson.research?.status === "error" && (
+        <p className="text-[12px] text-warn">Couldn't research this topic ({s.lesson.research.error}); taught from the model's own knowledge.</p>
+      )}
       <p className="text-[12px] leading-relaxed text-subtle">
         Tip: press <b>Space</b> to pause, <b>M</b> to ask by voice, <b>←/→</b> to step. Use the pen tools on the board to take your own notes.
       </p>

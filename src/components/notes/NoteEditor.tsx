@@ -115,6 +115,9 @@ export function NoteEditor({ id }: { id: string }) {
       outline: note.outline,
       sourceText: note.sourceText,
       sourceNames: note.sources?.map((s) => s.name),
+      tier: note.tier,
+      research: note.research,
+      references: note.references,
     });
   };
 

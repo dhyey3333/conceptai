@@ -68,7 +68,14 @@ export async function streamNdjson(url: string, body: unknown, onEvent: (e: Stre
 }
 
 export interface ServerStatus {
-  llm: { configured: boolean; provider?: string; model?: string };
+  llm: {
+    configured: boolean;
+    provider?: string;
+    model?: string;
+    /** cheaper model for easy topics, when different from the main one */
+    fast?: { provider: string; model: string };
+    research?: "web" | "wikipedia" | "off";
+  };
   tts: { configured: boolean; provider?: string };
   stt: { configured: boolean };
   supabase: { configured: boolean };

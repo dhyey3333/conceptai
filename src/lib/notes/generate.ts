@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from "react";
 import { streamNdjson } from "@/lib/api";
 import { store } from "@/lib/store";
-import type { Level, Note } from "@/lib/lesson/types";
+import type { Level, Note, Source, Tier } from "@/lib/lesson/types";
 
 export interface NoteParams {
   topic: string;
@@ -12,6 +12,9 @@ export interface NoteParams {
   outline?: string;
   sourceText?: string;
   sourceNames?: string[];
+  tier?: Tier;
+  research?: string;
+  references?: Source[];
 }
 
 interface LiveState {

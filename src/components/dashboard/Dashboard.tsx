@@ -6,10 +6,11 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Atom, BookOpen, Calculator, Dna, MessageSquare, Mic, NotebookPen, PenLine, Sparkles, TriangleAlert } from "lucide-react";
 import { fetchStatus, type ServerStatus } from "@/lib/api";
 import { DEPTHS, LANGUAGES, LEVELS, newId, type Depth, type Language, type Lesson, type Level } from "@/lib/lesson/types";
+import { chooseTier, shouldResearch, type ResearchPref, type TierPref } from "@/lib/lesson/routing";
 import { buildSampleLesson, SAMPLE_CARDS } from "@/lib/lesson/samples";
 import { store } from "@/lib/store";
 import { useLists } from "@/lib/useLists";
-import { timeAgo } from "@/lib/utils";
+import { modelLabel, timeAgo } from "@/lib/utils";
 import { Button, Chip } from "@/components/ui";
 import { SourceUpload, type Source } from "@/components/SourceUpload";
 
@@ -41,6 +42,8 @@ export function Dashboard() {
   const [language, setLanguage] = useState<Language>("english");
   const [depth, setDepth] = useState<Depth>("standard");
   const [sources, setSources] = useState<Source[]>([]);
+  const [tierPref, setTierPref] = useState<TierPref>("auto");
+  const [researchPref, setResearchPref] = useState<ResearchPref>("auto");
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -50,6 +53,12 @@ export function Dashboard() {
   }, []);
 
   const llm = status?.llm.configured;
+  const fast = status?.llm.fast;
+  const researchMode = status?.llm.research ?? "off";
+  const short = (m?: string) => modelLabel(m).replace(/^Claude /, "");
+  // What this lesson will use, given the current choices.
+  const plannedModel = chooseTier(tierPref, level) === "best" || !fast ? status?.llm.model : fast.model;
+  const plannedResearch = researchMode !== "off" && shouldResearch(researchPref, level);
 
   const start = async (t = topic) => {
     const clean = t.trim();
@@ -64,6 +73,8 @@ export function Dashboard() {
       depth,
       sourceText: sources[0]?.text,
       sourceName: sources[0]?.name,
+      tierPref,
+      researchPref,
       status: "new",
       sections: {},
       qa: [],
@@ -169,9 +180,46 @@ export function Dashboard() {
                 ))}
               </OptionRow>
             </div>
+            {llm && (fast || researchMode !== "off") && (
+              <div className="flex flex-wrap gap-x-6 gap-y-2.5">
+                {fast && (
+                  <OptionRow label="Teacher">
+                    <Chip active={tierPref === "auto"} onClick={() => setTierPref("auto")} title={`${modelLabel(fast.model)} for School and JEE/NEET, ${modelLabel(status?.llm.model)} for College and Advanced`}>
+                      Auto
+                    </Chip>
+                    <Chip active={tierPref === "fast"} onClick={() => setTierPref("fast")} title="Cheaper and faster">
+                      {short(fast.model)}
+                    </Chip>
+                    <Chip active={tierPref === "best"} onClick={() => setTierPref("best")} title="Most capable">
+                      {short(status?.llm.model)}
+                    </Chip>
+                  </OptionRow>
+                )}
+                {researchMode !== "off" && (
+                  <OptionRow label="Research">
+                    <Chip active={researchPref === "auto"} onClick={() => setResearchPref("auto")} title="Look it up first for College and Advanced levels">
+                      Auto
+                    </Chip>
+                    <Chip active={researchPref === "on"} onClick={() => setResearchPref("on")} title={researchMode === "web" ? "Search the web before teaching" : "Read Wikipedia before teaching"}>
+                      Always
+                    </Chip>
+                    <Chip active={researchPref === "off"} onClick={() => setResearchPref("off")}>
+                      Off
+                    </Chip>
+                  </OptionRow>
+                )}
+              </div>
+            )}
             <OptionRow label="Source">
               <SourceUpload sources={sources} onChange={setSources} label="Teach from my syllabus / PDF / slides" />
             </OptionRow>
+            {llm && (
+              <p className="pl-[4.5rem] text-[12px] text-subtle">
+                Taught by <span className="text-muted">{modelLabel(plannedModel)}</span>
+                {plannedResearch ? (researchMode === "web" ? ", researched on the web first" : ", researched on Wikipedia first") : ""}
+                {tierPref === "auto" && fast ? " (upgrades automatically if the topic turns out to be advanced)" : ""}
+              </p>
+            )}
           </div>
         </form>
 

@@ -45,3 +45,19 @@ export function isTyping(): boolean {
   if (!el) return false;
   return el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName);
 }
+
+/** "claude-opus-5-5" -> "Claude Opus 5.5"; other model ids are shown as-is. */
+export function modelLabel(model?: string): string {
+  if (!model) return "";
+  const m = /^claude-([a-z]+)-(\d+)(?:-(\d+))?$/.exec(model);
+  if (!m) return model;
+  return `Claude ${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}${m[3] ? `.${m[3]}` : ""}`;
+}
+
+export function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}

@@ -1,5 +1,8 @@
 import type { Beat } from "@/lib/board/schema";
 import type { Quiz } from "@/lib/quiz/schema";
+import type { ResearchPref, Tier, TierPref } from "./routing";
+
+export type { ResearchPref, Tier, TierPref };
 
 export type Level = "school" | "senior" | "college" | "advanced";
 export type Language = "english" | "hinglish" | "hindi";
@@ -79,6 +82,21 @@ export interface Stroke {
   points: [number, number, number][];
 }
 
+export interface Source {
+  title: string;
+  url: string;
+}
+
+/** Web research done before planning, passed into every later prompt. */
+export interface ResearchState {
+  status: "running" | "done" | "skipped" | "error";
+  brief?: string;
+  sources: Source[];
+  queries: string[];
+  provider?: "web" | "wikipedia";
+  error?: string;
+}
+
 export interface Lesson {
   id: string;
   topic: string;
@@ -88,6 +106,14 @@ export interface Lesson {
   /** Text extracted from an uploaded syllabus/slides, used as the teaching source. */
   sourceText?: string;
   sourceName?: string;
+  /** Learner's choice of model ("auto" routes by level) and of web research. */
+  tierPref?: TierPref;
+  researchPref?: ResearchPref;
+  /** Model tier actually teaching this lesson, decided when it was planned. */
+  tier?: Tier;
+  model?: string;
+  difficulty?: string;
+  research?: ResearchState;
   status: "new" | "outlining" | "ready" | "error";
   error?: string;
   outline?: Outline;
@@ -125,6 +151,9 @@ export interface Note {
   /** Kept so the notes can be regenerated with the same context. */
   sourceText?: string;
   outline?: string;
+  research?: string;
+  references?: Source[];
+  tier?: Tier;
   status: "generating" | "ready" | "error";
   error?: string;
   createdAt: number;

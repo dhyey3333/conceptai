@@ -1,11 +1,21 @@
-import { llmConfig, sttConfig, supabaseConfigured, ttsConfig } from "@/lib/server/env";
+import { llmConfig, researchMode, sttConfig, supabaseConfigured, ttsConfig } from "@/lib/server/env";
 
-/** What's configured on the server. Booleans and names only, never keys. */
+/** What's configured on the server. Names only, never keys. */
 export async function GET() {
-  const llm = llmConfig();
+  const best = llmConfig("best");
+  const fast = llmConfig("fast");
   const tts = ttsConfig();
   return Response.json({
-    llm: llm ? { configured: true, provider: llm.provider, model: llm.model } : { configured: false },
+    llm: best
+      ? {
+          configured: true,
+          provider: best.provider,
+          model: best.model,
+          // Present only when easy topics go to a different (cheaper) model.
+          fast: fast && (fast.model !== best.model || fast.provider !== best.provider) ? { provider: fast.provider, model: fast.model } : undefined,
+          research: researchMode(),
+        }
+      : { configured: false },
     tts: tts ? { configured: true, provider: tts.provider } : { configured: false },
     stt: { configured: !!sttConfig() },
     supabase: { configured: supabaseConfigured() },
