@@ -8,5 +8,7 @@ export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
     environment: "node",
+    // Tests never start the Python helper (tests that need it mock it).
+    env: { PY_HELPER: "off" },
   },
 });

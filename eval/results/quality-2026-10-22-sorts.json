@@ -1,0 +1,1518 @@
+{
+  "date": "2026-10-22-sorts",
+  "rows": [
+    {
+      "topic": "Heap sort",
+      "part": "The Heapify Algorithm & Sorting Logic",
+      "without": {
+        "beats": [
+          {
+            "say": "Now that we understand the heap structure, let's see how we maintain it. Heapify is the core operation that pushes a node down the tree until the max-heap property is restored.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "The Heapify Algorithm & Sorting Logic"
+              }
+            ]
+          },
+          {
+            "say": "Think of it as a bubble-down process. We compare a node with its children, and if a child is larger, we swap them and continue downwards.",
+            "draw": [
+              {
+                "type": "flowchart",
+                "direction": "TB",
+                "nodes": [
+                  {
+                    "id": "1",
+                    "label": "Start Heapify",
+                    "shape": "round"
+                  },
+                  {
+                    "id": "2",
+                    "label": "Compare node with children",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "3",
+                    "label": "Swap if child is larger",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "4",
+                    "label": "Continue down",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "5",
+                    "label": "Stop at leaf or correct spot",
+                    "shape": "round"
+                  }
+                ],
+                "edges": [
+                  {
+                    "from": "1",
+                    "to": "2"
+                  },
+                  {
+                    "from": "2",
+                    "to": "3"
+                  },
+                  {
+                    "from": "3",
+                    "to": "4"
+                  },
+                  {
+                    "from": "4",
+                    "to": "2"
+                  },
+                  {
+                    "from": "4",
+                    "to": "5"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "To sort an entire array, we first build the heap from the bottom up. Once it is a valid max-heap, the largest value is always at the root.",
+            "draw": [
+              {
+                "type": "steps",
+                "lines": [
+                  {
+                    "latex": "Build\\ Max\\ Heap",
+                    "note": "O(n) time"
+                  },
+                  {
+                    "latex": "Swap\\ root\\ with\\ last\\ element",
+                    "note": "Move max to end"
+                  },
+                  {
+                    "latex": "Heapify\\ the\\ new\\ root",
+                    "note": "Restore property"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "We then swap that root with the last element and shrink our heap size by one. We repeat this until the heap is empty, leaving us with a perfectly sorted array.",
+            "draw": [
+              {
+                "type": "figure",
+                "height": 40,
+                "caption": "Sorting sequence",
+                "shapes": [
+                  {
+                    "shape": "rect",
+                    "x": 10,
+                    "y": 10,
+                    "w": 15,
+                    "h": 10,
+                    "label": "Max"
+                  },
+                  {
+                    "shape": "rect",
+                    "x": 30,
+                    "y": 10,
+                    "w": 40,
+                    "h": 10,
+                    "label": "Heap"
+                  },
+                  {
+                    "shape": "rect",
+                    "x": 10,
+                    "y": 25,
+                    "w": 60,
+                    "h": 10,
+                    "label": "Sorted Array"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "Before we move to complexity, can you see why we start heapifying from the last non-leaf node rather than the root?",
+            "draw": [
+              {
+                "type": "text",
+                "text": "**Tip:** Always start from index (n/2) - 1 to build the heap efficiently!",
+                "tone": "tip"
+              }
+            ]
+          }
+        ],
+        "firstBeat": 4150,
+        "total": 22471,
+        "fixes": 0,
+        "checked": true,
+        "equations": 1,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": {
+          "input": null,
+          "shown": 0,
+          "wrong": 0
+        }
+      },
+      "with": {
+        "beats": [
+          {
+            "say": "Now that we understand the heap structure, let's master the Heapify process. This is the engine of our sort, ensuring the largest value always bubbles up to the root.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "The Heapify Algorithm & Sorting Logic"
+              },
+              {
+                "type": "flowchart",
+                "direction": "TB",
+                "nodes": [
+                  {
+                    "id": "a",
+                    "label": "Build Max-Heap",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "b",
+                    "label": "Swap Root with Last",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "c",
+                    "label": "Reduce Heap Size",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "d",
+                    "label": "Sift-Down Root",
+                    "shape": "box"
+                  }
+                ],
+                "edges": [
+                  {
+                    "from": "a",
+                    "to": "b"
+                  },
+                  {
+                    "from": "b",
+                    "to": "c"
+                  },
+                  {
+                    "from": "c",
+                    "to": "d"
+                  },
+                  {
+                    "from": "d",
+                    "to": "b",
+                    "label": "Repeat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "To build our heap from the array five, two, nine, one, seven, three, we start from the last parent at index two and work backwards to the root.",
+            "draw": [
+              {
+                "type": "array",
+                "values": [
+                  "5",
+                  "2",
+                  "9",
+                  "1",
+                  "7",
+                  "3"
+                ],
+                "label": "Input",
+                "caption": "Initial array"
+              }
+            ]
+          },
+          {
+            "say": "At index two, nine is already the largest. At index one, two is smaller than its child seven, so we swap them to get [5, 7, 9, 1, 2, 3]. Then, at index zero, five is smaller than its child nine, triggering a swap to place nine at the root, resulting in [9, 7, 5, 1, 2, 3].",
+            "draw": [
+              {
+                "type": "array",
+                "values": [
+                  "9",
+                  "7",
+                  "5",
+                  "1",
+                  "2",
+                  "3"
+                ],
+                "label": "Heap",
+                "caption": "Max-Heap Built"
+              }
+            ]
+          },
+          {
+            "say": "Now the sorting begins! We swap the root nine with the last element three, lock nine in place, and sift-down the new root three. Swapping three with seven restores the heap property for the remaining five elements.",
+            "draw": [
+              {
+                "type": "array",
+                "values": [
+                  "3",
+                  "7",
+                  "5",
+                  "1",
+                  "2",
+                  "9"
+                ],
+                "label": "Step 1",
+                "caption": "Swap 9 and 3, heap size 5"
+              },
+              {
+                "type": "array",
+                "values": [
+                  "7",
+                  "3",
+                  "5",
+                  "1",
+                  "2",
+                  "9"
+                ],
+                "label": "Step 2",
+                "caption": "Sift-down 3"
+              }
+            ]
+          },
+          {
+            "say": "We repeat this swap-and-sift process: swap 7 and 2, sift-down 2 (to 5), swap 5 and 1, sift-down 1 (to 3), swap 3 and 2, and finally swap 2 and 1. The array is now fully sorted.",
+            "draw": [
+              {
+                "type": "array",
+                "values": [
+                  "1",
+                  "2",
+                  "3",
+                  "5",
+                  "7",
+                  "9"
+                ],
+                "label": "Result",
+                "caption": "Sorted Array"
+              }
+            ]
+          }
+        ],
+        "firstBeat": 7048,
+        "total": 22998,
+        "fixes": 3,
+        "checked": true,
+        "equations": 0,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": {
+          "input": [
+            5,
+            2,
+            9,
+            1,
+            7,
+            3
+          ],
+          "shown": 6,
+          "wrong": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "topic": "Bubble sort",
+      "part": "Formal Logic and Complexity Analysis",
+      "without": {
+        "beats": [
+          {
+            "say": "Let's dive into the formal logic behind bubble sort. We have our unsorted array, and we need nested loops to make those adjacent comparisons across multiple passes.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "Formal Logic and Complexity Analysis"
+              }
+            ]
+          },
+          {
+            "say": "Here is the pseudocode for standard bubble sort. The outer loop runs $n$ times, and the inner loop compares adjacent elements up to $n$ minus $i$ minus $1$, shrinking as the largest elements settle at the end.",
+            "draw": [
+              {
+                "type": "text",
+                "text": "for i from 0 to n-1:",
+                "tone": "normal"
+              },
+              {
+                "type": "text",
+                "text": "for j from 0 to n-i-2:",
+                "tone": "normal"
+              },
+              {
+                "type": "text",
+                "text": "if A[j] > A[j+1] swap(A[j], A[j+1])",
+                "tone": "important"
+              }
+            ]
+          },
+          {
+            "say": "To find the worst case time complexity, we count the total number of comparisons. On pass one, we do $n-1$ comparisons, then $n-2$, all the way down to just $1$ comparison on the final pass.",
+            "draw": [
+              {
+                "type": "math",
+                "latex": "T(n) = \\sum_{i=1}^{n-1} (n - i)",
+                "label": "Total comparisons",
+                "boxed": true
+              }
+            ]
+          },
+          {
+            "say": "Let's expand this summation. It is equal to $(n-1)$ plus $(n-2)$ plus all the way down to $1$. Using our arithmetic series sum formula, this evaluates to $n$ times $n-1$ over $2$.",
+            "draw": [
+              {
+                "type": "steps",
+                "lines": [
+                  {
+                    "latex": "\\sum_{i=1}^{n-1} (n-i) = (n-1) + (n-2) + \\dots + 1",
+                    "note": "expand sum"
+                  },
+                  {
+                    "latex": "= \\frac{n(n-1)}{2}",
+                    "note": "arithmetic series formula"
+                  },
+                  {
+                    "latex": "= \\frac{n^2 - n}{2}",
+                    "note": "expand numerator"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "As $n$ grows large, the dominant term is $n$ squared. Thus, the worst-case time complexity of bubble sort is big-O of $n$ squared, making it inefficient for large datasets.",
+            "draw": [
+              {
+                "type": "math",
+                "latex": "O(n^2)",
+                "label": "Worst-case Time Complexity",
+                "boxed": true
+              }
+            ],
+            "point": "eq1"
+          }
+        ],
+        "firstBeat": 18071,
+        "total": 41079,
+        "fixes": 0,
+        "checked": true,
+        "equations": 3,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": {
+          "input": null,
+          "shown": 0,
+          "wrong": 0
+        }
+      },
+      "with": {
+        "beats": [
+          {
+            "say": "Let's dive into the formal logic behind bubble sort. We use a nested loop structure to repeatedly scan our array, comparing adjacent elements and pushing the maximum values to the right end.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "Formal Logic and Complexity Analysis"
+              }
+            ]
+          },
+          {
+            "say": "Here is the pseudocode for our algorithm. The outer loop runs $n$ minus $1$ times, while the inner loop compares adjacent elements up to the sorted portion at the end.",
+            "draw": [
+              {
+                "type": "math",
+                "latex": "\\text{for } i = 0 \\text{ to } n-2 \\\\\n\\quad \\text{for } j = 0 \\text{ to } n-i-2 \\\\\n\\quad \\quad \\text{if } A[j] > A[j+1] \\text{ swap } A[j], A[j+1]",
+                "label": "Bubble Sort Pseudocode",
+                "boxed": true
+              }
+            ]
+          },
+          {
+            "say": "To find the worst-case time complexity, we count the total number of comparisons made by the inner loop across all iterations of the outer loop.",
+            "draw": [
+              {
+                "type": "text",
+                "text": "Counting comparisons: Outer loop index $i$ goes from $0$ to $n-2$.",
+                "tone": "definition"
+              }
+            ]
+          },
+          {
+            "say": "Writing this out as a sum, for the first pass we do $n-1$ comparisons, then $n-2$, down to $1$ comparison in the final pass. Let's evaluate this arithmetic sum.",
+            "draw": [
+              {
+                "type": "math",
+                "latex": "T(n) = \\sum_{i=1}^{n-1} i = \\frac{(n-1)n}{2} = \\frac{n^2 - n}{2}",
+                "label": "Summation Derivation",
+                "boxed": true
+              }
+            ]
+          },
+          {
+            "say": "Taking the highest order term and dropping constants, our worst-case time complexity is big O of n squared. Can you see why this makes it too slow for very large datasets?",
+            "draw": [
+              {
+                "type": "text",
+                "text": "Worst-case Time Complexity: $O(n^2)$ due to the quadratic growth rate.",
+                "tone": "important"
+              }
+            ]
+          }
+        ],
+        "firstBeat": 27758,
+        "total": 57491,
+        "fixes": 0,
+        "checked": true,
+        "equations": 6,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": {
+          "input": null,
+          "shown": 0,
+          "wrong": 0
+        }
+      }
+    },
+    {
+      "topic": "Insertion sort",
+      "part": "The Algorithm and Complexity Analysis",
+      "without": {
+        "beats": [
+          {
+            "say": "Now that we see the intuition, let's formalize the algorithm. We use a nested loop: the outer loop picks the next card, and the inner loop shifts elements to make space for it.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "The Algorithm and Complexity Analysis"
+              },
+              {
+                "type": "math",
+                "latex": "\\text{for } j = 2 \\text{ to } n: \\\\ \\quad key = A[j] \\\\ \\quad i = j - 1 \\\\ \\quad \\text{while } i > 0 \\text{ and } A[i] > key: \\\\ \\quad \\quad A[i+1] = A[i] \\\\ \\quad \\quad i = i - 1 \\\\ \\quad A[i+1] = key",
+                "boxed": true
+              }
+            ]
+          },
+          {
+            "say": "To find the complexity, we look at the operations. The outer loop runs n minus one times, and in the worst case, the inner while loop runs j times.",
+            "draw": [
+              {
+                "type": "text",
+                "text": "Worst case: Array is in reverse order.",
+                "tone": "important"
+              },
+              {
+                "type": "math",
+                "latex": "T(n) = \\sum_{j=2}^{n} j = \\frac{n(n+1)}{2} - 1",
+                "label": "Summation"
+              }
+            ]
+          },
+          {
+            "say": "This summation simplifies to a quadratic expression. Since we care about the highest order term for Big O notation, this is clearly O of n squared.",
+            "draw": [
+              {
+                "type": "math",
+                "latex": "T(n) = \\frac{1}{2}n^2 + \\frac{1}{2}n - 1 \\approx O(n^2)",
+                "label": "Complexity"
+              }
+            ]
+          },
+          {
+            "say": "Think of it like this: for every element you pick, you might scan the entire sorted portion to its left. Can you visualize why this becomes so slow as the list grows?",
+            "draw": [
+              {
+                "type": "flowchart",
+                "direction": "TB",
+                "nodes": [
+                  {
+                    "id": "o",
+                    "label": "Outer Loop (n)"
+                  },
+                  {
+                    "id": "i",
+                    "label": "Inner Loop (up to n)"
+                  }
+                ],
+                "edges": [
+                  {
+                    "from": "o",
+                    "to": "i",
+                    "label": "nested"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "Exactly, that nested structure is the culprit. In the worst case, every single insertion forces a full scan of the sorted subarray, leading to that quadratic growth.",
+            "draw": [
+              {
+                "type": "text",
+                "text": "Key takeaway: $O(n^2)$ arises from the nested dependency.",
+                "tone": "tip"
+              }
+            ]
+          }
+        ],
+        "firstBeat": 6128,
+        "total": 18629,
+        "fixes": 0,
+        "checked": true,
+        "equations": 4,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": {
+          "input": null,
+          "shown": 0,
+          "wrong": 0
+        }
+      },
+      "with": {
+        "beats": [
+          {
+            "say": "Now, let's formalize this. We iterate through the array starting from the second element, treating the left side as our sorted partition. For each key, we shift elements larger than it to the right until we find its home.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "The Algorithm and Complexity Analysis"
+              },
+              {
+                "type": "steps",
+                "lines": [
+                  {
+                    "latex": "for j = 2 to n:",
+                    "note": "Start at second element"
+                  },
+                  {
+                    "latex": "key = A[j]",
+                    "note": "Pick current card"
+                  },
+                  {
+                    "latex": "i = j - 1",
+                    "note": "Look at sorted side"
+                  },
+                  {
+                    "latex": "while i > 0 and A[i] > key:",
+                    "note": "Find insertion spot"
+                  },
+                  {
+                    "latex": "A[i+1] = A[i]; i = i - 1",
+                    "note": "Shift elements"
+                  },
+                  {
+                    "latex": "A[i+1] = key",
+                    "note": "Place key"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "Let's trace our array, starting with two, five, nine, one, seven, three. We start at the second element, five, which is already in position. Next, we look at nine, which is also in position. Then we pick one, shifting nine, five, and two to the right to slot it into the first position. Now we have one, two, five, nine, seven, three.",
+            "draw": [
+              {
+                "type": "array",
+                "values": [
+                  "1",
+                  "2",
+                  "5",
+                  "9",
+                  "7",
+                  "3"
+                ],
+                "label": "A",
+                "caption": "Step 3: Insert 1"
+              }
+            ]
+          },
+          {
+            "say": "Finally, we process seven and three. We shift nine to the right to place seven, then shift nine, seven, and five to the right to place three. This results in our fully sorted array.",
+            "draw": [
+              {
+                "type": "array",
+                "values": [
+                  "1",
+                  "2",
+                  "3",
+                  "5",
+                  "7",
+                  "9"
+                ],
+                "label": "A",
+                "caption": "Sorted Result"
+              }
+            ]
+          },
+          {
+            "say": "Finally, we process seven and three. By shifting nine right for the seven, and nine, seven, and five right for the three, we reach our sorted state. Can you see how the number of shifts depends on how far out of order each element is?",
+            "draw": [
+              {
+                "type": "array",
+                "values": [
+                  "1",
+                  "2",
+                  "3",
+                  "5",
+                  "7",
+                  "9"
+                ],
+                "label": "A",
+                "caption": "Sorted Result"
+              }
+            ]
+          },
+          {
+            "say": "This nested structure is the key to our complexity. The outer loop runs n times, and in the worst case, the inner loop also runs proportional to n. This gives us a quadratic time complexity of O of n squared.",
+            "draw": [
+              {
+                "type": "flowchart",
+                "direction": "TB",
+                "nodes": [
+                  {
+                    "id": "o",
+                    "label": "Outer Loop (n)",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "i",
+                    "label": "Inner Loop (n)",
+                    "shape": "box"
+                  }
+                ],
+                "edges": [
+                  {
+                    "from": "o",
+                    "to": "i",
+                    "label": "Nested"
+                  }
+                ]
+              },
+              {
+                "type": "math",
+                "latex": "T(n) = O(n^2)",
+                "boxed": true
+              }
+            ]
+          }
+        ],
+        "firstBeat": 4586,
+        "total": 11915,
+        "fixes": 2,
+        "checked": true,
+        "equations": 2,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": {
+          "input": [
+            1,
+            2,
+            5,
+            9,
+            7,
+            3
+          ],
+          "shown": 2,
+          "wrong": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "topic": "Quick sort",
+      "part": "Hook and Partition Intuition",
+      "without": {
+        "beats": [
+          {
+            "say": "Welcome! Imagine you have a massive stack of unsorted exam papers. Instead of sorting them one by one, what if you picked one paper, put everything smaller to the left and everything larger to the right? That is the magic of Quicksort.",
+            "draw": [
+              {
+                "type": "title",
+                "text": "Mastering Quicksort: Divide and Conquer Sorting"
+              }
+            ]
+          },
+          {
+            "say": "This strategy is called Divide and Conquer. We break a big problem into smaller, manageable pieces, solve them independently, and then combine the results. Let us look at the heart of this: the Partition process.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "1. Partition Intuition"
+              },
+              {
+                "type": "flowchart",
+                "direction": "LR",
+                "nodes": [
+                  {
+                    "id": "1",
+                    "label": "Pick Pivot",
+                    "shape": "circle"
+                  },
+                  {
+                    "id": "2",
+                    "label": "Partition",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "3",
+                    "label": "Recurse",
+                    "shape": "circle"
+                  }
+                ],
+                "edges": [
+                  {
+                    "from": "1",
+                    "to": "2"
+                  },
+                  {
+                    "from": "2",
+                    "to": "3"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "We will use the Lomuto partition scheme. We choose the last element as our pivot. Then, we scan the array, swapping smaller elements to the front to build a 'less than' zone.",
+            "draw": [
+              {
+                "type": "array",
+                "values": [
+                  "3",
+                  "8",
+                  "2",
+                  "5",
+                  "1",
+                  "4",
+                  "7"
+                ],
+                "label": "Array",
+                "caption": "Pivot is 7"
+              }
+            ]
+          },
+          {
+            "say": "Watch as we compare each element to the pivot. If an element is smaller than or equal to the pivot, we swap it into our growing 'small' partition. After scanning, we place the pivot in its final position.",
+            "draw": [
+              {
+                "type": "array",
+                "values": [
+                  "3",
+                  "2",
+                  "5",
+                  "1",
+                  "4",
+                  "7",
+                  "8"
+                ],
+                "label": "A",
+                "pointers": [
+                  {
+                    "index": 5,
+                    "label": "Pivot Pos"
+                  }
+                ],
+                "highlight": [
+                  0,
+                  1,
+                  2,
+                  3,
+                  4
+                ],
+                "caption": "After partitioning around 7"
+              }
+            ]
+          },
+          {
+            "say": "Before we move to the math, think about this: what happens if we accidentally pick the smallest or largest element as our pivot every single time? How would that affect our 'Divide' step?",
+            "draw": [
+              {
+                "type": "text",
+                "text": "**Key Question:** What if the pivot is the min or max?",
+                "tone": "important"
+              }
+            ]
+          }
+        ],
+        "firstBeat": 9123,
+        "total": 15170,
+        "fixes": 1,
+        "checked": true,
+        "equations": 0,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": {
+          "input": [
+            3,
+            8,
+            2,
+            5,
+            1,
+            4,
+            7
+          ],
+          "shown": 1,
+          "wrong": 0,
+          "examples": []
+        }
+      },
+      "with": {
+        "beats": [
+          {
+            "say": "Hello! Today we are mastering Quicksort, the algorithm that powers most standard library sorts. Imagine you have a messy pile of books; instead of sorting the whole pile, you pick one book as a reference and arrange everything else around it.",
+            "draw": [
+              {
+                "type": "title",
+                "text": "Mastering Quicksort: Divide and Conquer Sorting"
+              }
+            ]
+          },
+          {
+            "say": "This is the divide and conquer philosophy. We pick a pivot, partition the array so smaller elements move left and larger ones move right, then repeat. Let's look at the partitioning process for the array seven, nine, two, one, five, three.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "1. Partition Intuition"
+              },
+              {
+                "type": "array",
+                "values": [
+                  "7",
+                  "9",
+                  "2",
+                  "1",
+                  "5",
+                  "3"
+                ],
+                "label": "A",
+                "caption": "Initial array, pivot is 3"
+              }
+            ]
+          },
+          {
+            "say": "Using Lomuto partitioning, we compare each element to our pivot, three. We swap elements smaller than three to the front, effectively building a 'smaller' zone, then place the pivot in its final sorted position.",
+            "draw": [
+              {
+                "type": "flowchart",
+                "direction": "TB",
+                "nodes": [
+                  {
+                    "id": "1",
+                    "label": "Pick Pivot",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "2",
+                    "label": "Partition",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "3",
+                    "label": "Recurse Left",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "4",
+                    "label": "Recurse Right",
+                    "shape": "box"
+                  }
+                ],
+                "edges": [
+                  {
+                    "from": "1",
+                    "to": "2"
+                  },
+                  {
+                    "from": "2",
+                    "to": "3"
+                  },
+                  {
+                    "from": "2",
+                    "to": "4"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "Watch as we partition the array around three. Seven, nine, two, one, five are compared to three. After swapping, we get two, one, three, nine, five, seven. Three is now perfectly placed at index two!",
+            "draw": [
+              {
+                "type": "array",
+                "values": [
+                  "2",
+                  "1",
+                  "3",
+                  "9",
+                  "5",
+                  "7"
+                ],
+                "label": "A",
+                "highlight": [
+                  2
+                ],
+                "caption": "After partitioning around 3"
+              }
+            ]
+          },
+          {
+            "say": "Now, we have two sub-problems: the left side containing two and one, and the right side containing five, seven, and nine. Think about it: if we keep doing this recursively, what happens when a sub-array has only one element left?",
+            "draw": [
+              {
+                "type": "text",
+                "text": "Base Case: Array size 0 or 1 is already sorted.",
+                "tone": "important"
+              }
+            ]
+          }
+        ],
+        "firstBeat": 5272,
+        "total": 11487,
+        "fixes": 1,
+        "checked": true,
+        "equations": 0,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": {
+          "input": [
+            7,
+            9,
+            2,
+            1,
+            5,
+            3
+          ],
+          "shown": 1,
+          "wrong": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "topic": "Selection sort",
+      "part": "Worked Example and Trade-offs",
+      "without": {
+        "beats": [
+          {
+            "say": "Let us apply our logic to the specific array sixty-four, twenty-five, twelve, twenty-two, eleven. We look for the smallest value in the entire list to place at the first index.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "Worked Example and Trade-offs"
+              },
+              {
+                "type": "array",
+                "values": [
+                  "64",
+                  "25",
+                  "12",
+                  "22",
+                  "11"
+                ],
+                "label": "A",
+                "caption": "Initial state"
+              }
+            ]
+          },
+          {
+            "say": "The smallest value is eleven, found at the last index. We swap it with the element at the first position, which is sixty-four, resulting in our first sorted element.",
+            "draw": [
+              {
+                "type": "array",
+                "values": [
+                  "11",
+                  "25",
+                  "12",
+                  "22",
+                  "64"
+                ],
+                "label": "A",
+                "highlight": [
+                  0,
+                  4
+                ],
+                "caption": "Swap 11 and 64"
+              }
+            ]
+          },
+          {
+            "say": "Next, we scan the remaining sub-array from index one to four. Twelve is the smallest here, so we swap it with twenty-five to lock it into the second position.",
+            "draw": [
+              {
+                "type": "array",
+                "values": [
+                  "11",
+                  "12",
+                  "25",
+                  "22",
+                  "64"
+                ],
+                "label": "A",
+                "highlight": [
+                  1,
+                  2
+                ],
+                "caption": "Swap 12 and 25"
+              }
+            ]
+          },
+          {
+            "say": "Selection sort is an in-place algorithm because it only requires a constant amount of extra space, or big O of one. However, because it always performs a quadratic number of comparisons, it is quite slow for large datasets compared to algorithms like MergeSort.",
+            "draw": [
+              {
+                "type": "table",
+                "headers": [
+                  "Property",
+                  "Complexity"
+                ],
+                "rows": [
+                  [
+                    "Time",
+                    "O(n^2)"
+                  ],
+                  [
+                    "Space",
+                    "O(1)"
+                  ],
+                  [
+                    "Stable",
+                    "No"
+                  ]
+                ]
+              },
+              {
+                "type": "text",
+                "text": "**In-place**: No extra memory used.",
+                "tone": "important"
+              }
+            ]
+          },
+          {
+            "say": "To recap, we repeatedly find the minimum and swap it into place. Before we wrap up, consider this: if the array were already sorted, would selection sort still perform all those comparisons?",
+            "draw": [
+              {
+                "type": "bullets",
+                "items": [
+                  "Find minimum in sub-array",
+                  "Swap with boundary",
+                  "Quadratic time complexity",
+                  "Constant space complexity"
+                ],
+                "ordered": false
+              }
+            ]
+          }
+        ],
+        "firstBeat": 5607,
+        "total": 20346,
+        "fixes": 0,
+        "checked": true,
+        "equations": 0,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": {
+          "input": [
+            64,
+            25,
+            12,
+            22,
+            11
+          ],
+          "shown": 2,
+          "wrong": 0,
+          "examples": []
+        }
+      },
+      "with": {
+        "beats": [
+          {
+            "say": "Let us apply the logic we just learned to a concrete example. We will sort the array 64, 25, 12, 22, 11 by repeatedly finding the minimum and swapping it into the front.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "Worked Example and Trade-offs"
+              },
+              {
+                "type": "array",
+                "values": [
+                  "64",
+                  "25",
+                  "12",
+                  "22",
+                  "11"
+                ],
+                "label": "A",
+                "caption": "Initial State"
+              }
+            ]
+          },
+          {
+            "say": "First, we scan the whole array for the smallest value, which is 11. We swap 11 with 64 at the start, giving us 11, 25, 12, 22, 64.",
+            "draw": [
+              {
+                "type": "array",
+                "values": [
+                  "11",
+                  "25",
+                  "12",
+                  "22",
+                  "64"
+                ],
+                "label": "A",
+                "highlight": [
+                  0
+                ],
+                "caption": "Pass 1: Swap 11 and 64"
+              }
+            ]
+          },
+          {
+            "say": "Next, we look at the remaining unsorted part, 25, 12, 22, 64. The smallest is 12, so we swap 12 with 25 to get 11, 12, 25, 22, 64.",
+            "draw": [
+              {
+                "type": "array",
+                "values": [
+                  "11",
+                  "12",
+                  "25",
+                  "22",
+                  "64"
+                ],
+                "label": "A",
+                "highlight": [
+                  1
+                ],
+                "caption": "Pass 2: Swap 12 and 25"
+              }
+            ]
+          },
+          {
+            "say": "While Selection Sort is excellent because it is in-place, meaning it uses constant extra space, it is slow for large data. Unlike efficient algorithms such as QuickSort or MergeSort, Selection Sort always performs n squared comparisons, regardless of the initial order.",
+            "draw": [
+              {
+                "type": "table",
+                "headers": [
+                  "Complexity",
+                  "Notation"
+                ],
+                "rows": [
+                  [
+                    "Time",
+                    "O(n^2)"
+                  ],
+                  [
+                    "Space",
+                    "O(1)"
+                  ]
+                ]
+              },
+              {
+                "type": "text",
+                "text": "**In-place**: No extra memory needed.",
+                "tone": "important"
+              }
+            ]
+          },
+          {
+            "say": "To wrap up, Selection Sort is simple and memory-efficient but inefficient for massive datasets. Think about this: if you had a nearly sorted list, would Selection Sort still take the same amount of time?",
+            "draw": [
+              {
+                "type": "bullets",
+                "items": [
+                  "Simple to implement",
+                  "In-place O(1) space",
+                  "Quadratic O(n^2) time",
+                  "Inefficient for large N"
+                ]
+              }
+            ]
+          }
+        ],
+        "firstBeat": 7980,
+        "total": 26978,
+        "fixes": 1,
+        "checked": true,
+        "equations": 0,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": {
+          "input": [
+            64,
+            25,
+            12,
+            22,
+            11
+          ],
+          "shown": 2,
+          "wrong": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "topic": "Merge sort",
+      "part": "Intuition & Divide Step",
+      "without": {
+        "beats": [
+          {
+            "say": "Welcome! Imagine you have a massive stack of hundreds of unsorted exam papers. Sorting them one by one is exhausting, but what if you split them in half, gave them to two friends, and combined their sorted stacks? That is the magic of Merge Sort!",
+            "draw": [
+              {
+                "type": "title",
+                "text": "Understanding Merge Sort"
+              }
+            ]
+          },
+          {
+            "say": "This is a divide and conquer strategy. We break a large problem into smaller, identical sub-problems, solve those, and then combine the results. Let's look at the first phase: the Divide step.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "1. Intuition & Divide Step"
+              }
+            ]
+          },
+          {
+            "say": "We take our array and keep splitting it exactly in the middle until we reach single elements. A single element is, by definition, already sorted. Look at how this binary tree grows as we split the list.",
+            "draw": [
+              {
+                "type": "tree",
+                "nodes": [
+                  {
+                    "id": "root",
+                    "label": "[38, 27, 43, 3, 9, 82, 1"
+                  },
+                  {
+                    "id": "l1",
+                    "label": "[38, 27, 43, 3]",
+                    "parent": "root"
+                  },
+                  {
+                    "id": "r1",
+                    "label": "[9, 82, 10, 5]",
+                    "parent": "root"
+                  },
+                  {
+                    "id": "l2",
+                    "label": "[38, 27]",
+                    "parent": "l1"
+                  },
+                  {
+                    "id": "r2",
+                    "label": "[43, 3]",
+                    "parent": "l1"
+                  },
+                  {
+                    "id": "l3",
+                    "label": "[9, 82]",
+                    "parent": "r1"
+                  },
+                  {
+                    "id": "r3",
+                    "label": "[10, 5]",
+                    "parent": "r1"
+                  }
+                ],
+                "binary": false
+              }
+            ]
+          },
+          {
+            "say": "Notice how the tree depth is logarithmic? This is why the algorithm is so efficient. Before we move on, can you see how many levels this tree will have for an array of size eight?",
+            "draw": [
+              {
+                "type": "text",
+                "text": "**Divide Strategy**: Recursively split until size 1.",
+                "tone": "definition"
+              }
+            ]
+          }
+        ],
+        "firstBeat": 2089,
+        "total": 26037,
+        "fixes": 1,
+        "checked": true,
+        "equations": 0,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": {
+          "input": [
+            38,
+            27,
+            43,
+            3
+          ],
+          "shown": 1,
+          "wrong": 1,
+          "examples": [
+            [
+              9,
+              82,
+              10,
+              5
+            ]
+          ]
+        }
+      },
+      "with": {
+        "beats": [
+          {
+            "say": "Welcome! Imagine you have a massive stack of exam papers to sort by ID number. Sorting the whole pile at once is chaotic, right? What if you split it into two, sorted those, and then combined them? That is the core of Merge Sort.",
+            "draw": [
+              {
+                "type": "title",
+                "text": "Understanding Merge Sort"
+              }
+            ]
+          },
+          {
+            "say": "Let us start with the Divide step. We take an unsorted array and keep splitting it in half until every element is its own tiny, sorted list of one. This is a classic divide-and-conquer strategy.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "1. Intuition & Divide Step"
+              },
+              {
+                "type": "tree",
+                "nodes": [
+                  {
+                    "id": "root",
+                    "label": "[5, 2, 9, 1, 7, 3]"
+                  },
+                  {
+                    "id": "l1",
+                    "label": "[5, 2, 9]",
+                    "parent": "root",
+                    "side": "left"
+                  },
+                  {
+                    "id": "r1",
+                    "label": "[1, 7, 3]",
+                    "parent": "root",
+                    "side": "right"
+                  },
+                  {
+                    "id": "l2",
+                    "label": "[5]",
+                    "parent": "l1",
+                    "side": "left"
+                  },
+                  {
+                    "id": "r2",
+                    "label": "[2, 9]",
+                    "parent": "l1",
+                    "side": "right"
+                  },
+                  {
+                    "id": "l3",
+                    "label": "[1]",
+                    "parent": "r1",
+                    "side": "left"
+                  },
+                  {
+                    "id": "r3",
+                    "label": "[7, 3]",
+                    "parent": "r1",
+                    "side": "right"
+                  },
+                  {
+                    "id": "l2a",
+                    "label": "[2]",
+                    "parent": "r2",
+                    "side": "left"
+                  },
+                  {
+                    "id": "r2a",
+                    "label": "[9]",
+                    "parent": "r2",
+                    "side": "right"
+                  },
+                  {
+                    "id": "l3a",
+                    "label": "[7]",
+                    "parent": "r3",
+                    "side": "left"
+                  },
+                  {
+                    "id": "r3a",
+                    "label": "[3]",
+                    "parent": "r3",
+                    "side": "right"
+                  }
+                ],
+                "binary": true
+              }
+            ]
+          },
+          {
+            "say": "Look at how the tree grows downward. Each level represents a division. By breaking the problem down, we turn a complex sorting task into a series of simple, manageable merges. Can you see how this structure helps us keep track of our progress?",
+            "draw": [
+              {
+                "type": "text",
+                "text": "Divide: $O(log n)$ levels of splitting",
+                "tone": "important"
+              }
+            ]
+          },
+          {
+            "say": "At the bottom, we have single elements. Since a single element is technically already sorted, the hard work happens when we merge these back together. This recursive splitting is what makes Merge Sort so efficient and predictable.",
+            "draw": [
+              {
+                "type": "bullets",
+                "items": [
+                  "Divide: split array in half",
+                  "Conquer: sort sub-arrays recursively",
+                  "Combine: merge sorted sub-arrays"
+                ]
+              }
+            ]
+          }
+        ],
+        "firstBeat": 18857,
+        "total": 28058,
+        "fixes": 1,
+        "checked": true,
+        "equations": 1,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": {
+          "input": [
+            5,
+            2,
+            9,
+            1,
+            7,
+            3
+          ],
+          "shown": 2,
+          "wrong": 0,
+          "examples": []
+        }
+      }
+    }
+  ],
+  "totals": {
+    "without": {
+      "equations": 8,
+      "equationErrors": 0,
+      "traceShown": 4,
+      "traceWrong": 1,
+      "fixes": 2,
+      "firstBeat": 7528
+    },
+    "with": {
+      "equations": 9,
+      "equationErrors": 0,
+      "traceShown": 13,
+      "traceWrong": 0,
+      "fixes": 8,
+      "firstBeat": 11916.833333333334
+    }
+  }
+}

@@ -107,6 +107,8 @@ export function sectionPrompt(input: {
   sourceText?: string;
   research?: string;
   sourceBudget?: number;
+  /** A real run of the algorithm this part teaches (Python helper), to narrate step by step. */
+  worked?: string;
 }) {
   const { outline, sectionIndex: i } = input;
   const section = outline.sections[i];
@@ -150,7 +152,7 @@ ${near ? "Outline around this part" : "Full outline"}:
 ${outlineText}
 
 Now teach section ${i + 1} of ${outline.sections.length}: "${section.title}". Goal: ${section.goal}
-${position}${ending}${coverage}
+${position}${ending}${coverage}${input.worked ? `\n\n${input.worked}` : ""}
 Write ${beats} beats.${researchBlock(input.research, 3500)}${materialForPart(input.sourceText, section, input.sourceBudget ?? 5000)}`;
   return { system, user };
 }
@@ -175,14 +177,22 @@ export function checkBeatsPrompt(input: {
   first?: number;
   /** Narration of the beats before these, for following a trace; not to be checked. */
   earlier?: string[];
+  /** A real run of the algorithm (Python helper): any step that differs from it is wrong. */
+  reference?: string;
+  /** Errors found by exact computation (SymPy): certain, and each must be fixed. */
+  exact?: string[];
 }) {
   const first = input.first ?? 0;
   const beats = input.beats.map((b, i) => `[${first + i}] ${JSON.stringify({ say: b.say, draw: b.draw })}`).join("\n");
   const earlier = input.earlier?.length
     ? `\n\nWhat the teacher said just before (already checked; context only, do not fix):\n${input.earlier.slice(-6).map((s, i, a) => `[${first - a.length + i}] ${s}`).join("\n")}`
     : "";
+  const reference = input.reference
+    ? `\n\nREFERENCE, computed by actually running the algorithm (it is correct; where the material uses the same input, any step that differs from it is wrong):\n${input.reference}`
+    : "";
+  const exact = input.exact?.length ? `\n\nEXACT CHECKS (computed with SymPy) found these definite errors; fix every one:\n${input.exact.join("\n")}` : "";
   const user = `Topic: ${input.topic}. Learner: ${LEVEL_TEXT[input.level]}
-${input.context}${researchBlock(input.research, 3000)}${earlier}
+${input.context}${researchBlock(input.research, 3000)}${earlier}${reference}${exact}
 
 The material to check, one beat per line: [index] {"say": spoken narration, "draw": board items}
 <beats>
@@ -200,9 +210,10 @@ Include "say" and/or "draw" only for beats that change. In a corrected "draw", k
 }
 
 /** Review a chunk of exam notes; corrections are exact find/replace pairs. */
-export function checkNotesPrompt(input: { topic: string; level: Level; context: string; research?: string; notes: string }) {
+export function checkNotesPrompt(input: { topic: string; level: Level; context: string; research?: string; notes: string; exact?: string[] }) {
+  const exact = input.exact?.length ? `\n\nEXACT CHECKS (computed with SymPy) found these definite errors in the notes; fix every one:\n${input.exact.join("\n")}` : "";
   const user = `Topic: ${input.topic}. Learner: ${LEVEL_TEXT[input.level]}
-${input.context}${researchBlock(input.research, 3000)}
+${input.context}${researchBlock(input.research, 3000)}${exact}
 
 <notes>
 ${input.notes}
@@ -364,11 +375,19 @@ export function notesPrompt(input: {
   references?: { title: string; url: string }[];
   /** Characters of the material that fit in the request (see sourceBudget). */
   sourceBudget?: number;
+  /**
+   * Notes for a long document are written in pieces: one part per block of
+   * pages ({part, parts, pages, title}), then the closing sections ({closing}).
+   */
+  scope?: { part: number; parts: number; pages: string; title: string } | { closing: true };
 }) {
   const marks = [...input.marks].sort((a, b) => a - b);
-  const system = `You are an expert teacher and exam-paper setter. Write comprehensive, exam-ready study notes in Markdown for ${LEVEL_TEXT[input.level]}
-
-Use this structure (adapt section names sensibly to the subject; for non-quantitative topics replace "Derivations" with "Key Processes / Mechanisms"):
+  const questions = `## Important Questions with Answers
+${marks.map((m) => MARK_GUIDE[m]).join("\n")}
+Write each question in bold, followed by its full model answer.`;
+  const scope = input.scope;
+  const structure = !scope
+    ? `Use this structure (adapt section names sensibly to the subject; for non-quantitative topics replace "Derivations" with "Key Processes / Mechanisms"):
 # <Title>
 > A short overview: what it is and why it matters.
 ## 1. Key Definitions
@@ -380,16 +399,31 @@ Use this structure (adapt section names sensibly to the subject; for non-quantit
 ## 7. Applications
 ## 8. Common Mistakes & Exam Tips
 ## 9. Quick Revision Summary (a bullet cheat-sheet)
-## 10. Important Questions with Answers
-${marks.map((m) => MARK_GUIDE[m]).join("\n")}
-Write each question in bold, followed by its full model answer.
+## 10. ${questions.slice(3)}`
+    : "closing" in scope
+      ? `These are the closing sections of notes on a long document whose parts were written separately. Write only:
+## Quick Revision Summary (a bullet cheat-sheet of the whole document)
+${questions}
+Spread the questions across the whole document (its page map is below), weighting its main topics.`
+      : `This is part ${scope.part} of ${scope.parts} of the notes on a long document. Write notes ONLY for its pages ${scope.pages}, as one section of the full set, and cover everything on those pages. Its heading "## Part ${scope.part}: ${scope.title} (pages ${scope.pages})" is already written: do not repeat it, start straight with ${scope.part === 1 ? "a short overview of the whole document as a > quote (what it covers and why it matters), then " : ""}these ### sections:
+### Key Definitions
+### Detailed Explanation   (subsections with ####; explain the why, not just the what)
+### Important Formulas     (each as display math with symbol meanings and SI units)
+### Derivations            (numbered steps, each justified)
+### Diagrams               (see diagram rules; caption each one in italics)
+### Worked Examples        (the material's own examples, then one of yours where it helps)
+### Common Mistakes & Exam Tips
+Leave out a heading only when these pages have nothing for it. No revision summary, questions or references here: they come once, at the end of the full notes.`;
+  const system = `You are an expert teacher and exam-paper setter. Write comprehensive, exam-ready study notes in Markdown for ${LEVEL_TEXT[input.level]}
+
+${structure}
 
 Formatting rules:
 - Maths uses KaTeX syntax: inline $...$ and display $$...$$ on their own lines. Use \\begin{aligned} for multi-line work. No HTML.
 - Diagrams: for processes, cycles, hierarchies and classifications use a fenced \`\`\`mermaid block (flowchart TD or LR; put labels with spaces or symbols in quotes, e.g. A["Light energy"]). For geometry, physics setups, graphs, trees and arrays (data structures, algorithm steps) use a fenced \`\`\`diagram block holding ONE JSON whiteboard item (a "figure" with shapes, a "plot", a "tree" or an "array"), from this specification:
 ${BOARD_SPEC.split("\n").filter((l) => /figure|plot|shape|Figure coordinates|expr uses|"type":"tree"|"type":"array"|Trees and arrays/.test(l)).join("\n")}
 - Be accurate and complete; do not pad. Check every numerical answer.${
-    input.references?.length
+    input.references?.length && (!scope || "closing" in scope)
       ? `\n- End with a "## References" section listing exactly these sources as Markdown links (do not add others):\n${input.references
           .map((r) => `  - [${r.title.replace(/[[\]]/g, "")}](${r.url})`)
           .join("\n")}`

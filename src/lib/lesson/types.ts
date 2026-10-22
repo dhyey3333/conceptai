@@ -52,6 +52,8 @@ export interface SectionContent {
   error?: string;
   /** "writing" while beats stream in; "checking" once written, while the fact-check runs. */
   phase?: "writing" | "checking";
+  /** Interrupted while being written and kept as it was (the outline offers to rewrite it). */
+  partial?: boolean;
   /** Whether the fact-check ran, and how many beats it corrected. */
   checked?: boolean;
   fixes?: number;

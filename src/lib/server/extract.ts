@@ -4,6 +4,7 @@
  * and plain text / Markdown. Nothing is executed and nothing is stored.
  */
 import { strFromU8, unzipSync } from "fflate";
+import { callHelper } from "./helper";
 
 export const MAX_UPLOAD = 15 * 1024 * 1024;
 const MAX_UNZIPPED_FILE = 25 * 1024 * 1024;
@@ -38,13 +39,28 @@ function unzip(buf: Uint8Array, want: (name: string) => boolean) {
   return unzipSync(buf, { filter: (f) => want(f.name) && f.originalSize < MAX_UNZIPPED_FILE });
 }
 
-async function pdfText(buf: Uint8Array): Promise<{ text: string; pages: number }> {
+async function pdfText(buf: Uint8Array): Promise<{ text: string; pages: number; ocr: number }> {
   const { extractText, getDocumentProxy } = await import("unpdf");
-  const pdf = await getDocumentProxy(buf);
+  const pdf = await getDocumentProxy(buf.slice());
   const { totalPages, text } = await extractText(pdf, { mergePages: false });
+  const pages = Array.isArray(text) ? [...text] : [text];
+  // Scanned or photographed pages have no text layer: read them by OCR (Python helper), when it's running.
+  const empty = pages.flatMap((t, i) => (t.trim().length < 30 ? [i + 1] : []));
+  let ocr = 0;
+  if (empty.length) {
+    const form = new FormData();
+    form.append("file", new Blob([Uint8Array.from(buf)], { type: "application/pdf" }), "document.pdf");
+    form.append("pages", empty.join(","));
+    const r = await callHelper<{ pages: { n: number; text: string }[] }>("/pdf/ocr", form, 20_000 + empty.length * 5_000);
+    for (const p of r?.pages ?? []) {
+      if (p.text.trim().length >= 10 && p.n >= 1 && p.n <= pages.length) {
+        pages[p.n - 1] = p.text;
+        ocr++;
+      }
+    }
+  }
   // Mark every page, so lessons can be planned and taught page by page.
-  const pages = Array.isArray(text) ? text : [text];
-  return { text: pages.map((t, i) => `[page ${i + 1}]\n${t.trim()}`).join("\n\n"), pages: totalPages };
+  return { text: pages.map((t, i) => `[page ${i + 1}]\n${t.trim()}`).join("\n\n"), pages: totalPages, ocr };
 }
 
 function pptxText(buf: Uint8Array): { text: string; pages: number } {
@@ -69,9 +85,9 @@ function docxText(buf: Uint8Array): { text: string; pages: number } {
   return { text: ooxmlText(strFromU8(xml), "w:t", "w:p"), pages: 0 };
 }
 
-export async function extractText(name: string, type: string, buf: Uint8Array): Promise<{ text: string; pages: number; truncated: boolean }> {
+export async function extractText(name: string, type: string, buf: Uint8Array): Promise<{ text: string; pages: number; truncated: boolean; ocr: number }> {
   const ext = name.toLowerCase().split(".").pop() ?? "";
-  let out: { text: string; pages: number };
+  let out: { text: string; pages: number; ocr?: number };
   if (ext === "pdf" || type === "application/pdf") out = await pdfText(buf);
   else if (ext === "pptx") out = pptxText(buf);
   else if (ext === "docx") out = docxText(buf);
@@ -80,5 +96,5 @@ export async function extractText(name: string, type: string, buf: Uint8Array): 
 
   // eslint-disable-next-line no-control-regex
   const clean = out.text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "").replace(/[ \t]+\n/g, "\n").trim();
-  return { text: clean.slice(0, MAX_TEXT), pages: out.pages, truncated: clean.length > MAX_TEXT };
+  return { text: clean.slice(0, MAX_TEXT), pages: out.pages, truncated: clean.length > MAX_TEXT, ocr: out.ocr ?? 0 };
 }

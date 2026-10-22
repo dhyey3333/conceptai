@@ -245,15 +245,17 @@ export class LessonSession {
         if (!ok) return;
       }
       const sections = this.sections;
-      for (let i = 0; i < sections.length; i++) {
+      // Always the first part still to write, so a part sent back to be rewritten is picked up too.
+      for (let i = this.nextToWrite(); i >= 0; i = this.nextToWrite()) {
         if (this.destroyed) return;
-        if (this.state.lesson.sections[sections[i].id]?.status === "ready") continue;
         // A long lesson (a whole document) is written a few parts ahead of the student,
         // not all at once: no waiting, and a free plan isn't spent on parts never reached.
         if (sections.length > WRITE_ALL_UP_TO && i > this.studentSection() + WRITE_AHEAD) {
           if (this.env.sequential) this.maybeStartNotes(); // a quiet moment on a rate-limited plan
-          while (!this.destroyed && i > this.studentSection() + WRITE_AHEAD) await new Promise((r) => setTimeout(r, 1500));
+          // Stop waiting early if an earlier part is sent back to be rewritten.
+          while (!this.destroyed && i > this.studentSection() + WRITE_AHEAD && this.nextToWrite() === i) await new Promise((r) => setTimeout(r, 1500));
           if (this.destroyed) return;
+          if (this.nextToWrite() !== i) continue;
         }
         this.writing = true;
         const ok = await this.generateSection(i);
@@ -271,6 +273,13 @@ export class LessonSession {
       // Parts that couldn't be checked while writing get another go now.
       setTimeout(() => void this.recheck(), 1500);
     }
+  }
+
+  /** Index of the first part not yet written (or -1). A failed part stops the chain until it's retried. */
+  private nextToWrite(): number {
+    const parts = this.sections.map((s) => this.state.lesson.sections[s.id]?.status ?? "pending");
+    const i = parts.findIndex((st) => st !== "ready");
+    return i >= 0 && parts[i] !== "error" ? i : -1;
   }
 
   /** The part the student is on: where playback is, or a later page they're looking at. */
@@ -439,10 +448,15 @@ export class LessonSession {
         await new Promise((r) => setTimeout(r, 20_000 * (attempt + 1)));
         return this.destroyed ? false : this.streamSection(i, onWritten, attempt + 1);
       }
-      // Keep a usable partial section rather than throwing it away.
+      // Cut short before the student got here: write it again, whole (a couple of tries).
+      if (i > this.studentSection() && attempt < 2) {
+        await new Promise((r) => setTimeout(r, 3000 * (attempt + 1)));
+        return this.destroyed ? false : this.streamSection(i, onWritten, attempt + 1);
+      }
+      // Already being taught: keep what was written, and offer to rewrite it in full.
       if (beats.length >= 3) {
-        patchSection({ status: "ready", beats: [...beats], phase: undefined });
-        this.set({ notice: `Part ${i + 1} was cut short: ${message}` });
+        patchSection({ status: "ready", beats: [...beats], phase: undefined, partial: true });
+        this.set({ notice: `Part ${i + 1} was cut short (${message}). Use Rewrite in the outline to write it again in full.` });
         return true;
       }
       patchSection({ status: "error", beats: [], error: message });

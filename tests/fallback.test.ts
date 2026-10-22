@@ -16,6 +16,7 @@ const ENV = {
 type Behaviour = "ok" | "daily" | "offline" | "badkey";
 let hosted: Record<string, Behaviour> = {};
 const calls: string[] = [];
+const sent: Record<string, string> = {};
 
 function sse(text: string): Response {
   const body = `data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\ndata: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`;
@@ -30,6 +31,7 @@ beforeEach(() => {
   vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body));
     calls.push(body.model);
+    sent[body.model] = body.messages.at(-1).content;
     if (url.startsWith("http://localhost:11434")) {
       return new Response(`${JSON.stringify({ message: { content: "from local" } })}\n${JSON.stringify({ done: true, done_reason: "stop" })}\n`, { status: 200 });
     }
@@ -125,6 +127,19 @@ describe("falling back when the main model can't answer", () => {
     await run();
     // Gemini is used up, so Groq-like "big" (8,000 tokens a minute) answers: less material fits.
     expect(sourceBudget(undefined, "part")).toBe(5000);
+  });
+
+  it("rebuilds the prompt for each model it falls back to, within one request", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-gemini-key-not-real");
+    vi.stubEnv("LLM_TPM_LIMIT", "8000");
+    hosted = { "gemini-3.8-flash": "daily", "gemini-3.5-flash-lite": "daily", big: "daily", small: "daily" };
+    const { completeText } = await import("@/lib/server/llm");
+    const { budgetFor } = await import("@/lib/server/env");
+    const sized = (b: number) => ({ system: "s", messages: [{ role: "user" as const, content: `budget ${b}` }] });
+    const text = await completeText({ ...sized(40000), sizeFor: (cfg) => sized(budgetFor(cfg, "notes")), maxTokens: 100 });
+    expect(text).toBe("from local");
+    // Gemini gets the long excerpt; the Groq-like models (8,000 tokens a minute) and the local model a short one.
+    expect([sent["gemini-3.8-flash"], sent.big, sent.small, sent.local]).toEqual(["budget 40000", "budget 9000", "budget 9000", "budget 9000"]);
   });
 
   it("keeps teaching past a rejected API key, and reports it instead of hiding it", async () => {

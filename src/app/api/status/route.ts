@@ -1,10 +1,12 @@
 import { generateSequentially, llmConfig, providerChain, researchMode, sttConfig, supabaseConfigured, ttsConfig } from "@/lib/server/env";
-import { currentConfigProblem } from "@/lib/server/llm";
+import { activeConfig, currentConfigProblem } from "@/lib/server/llm";
+import { helperUp } from "@/lib/server/helper";
 
 /** What's configured on the server. Names only, never keys. */
 export async function GET() {
-  const best = llmConfig("best");
-  const fast = llmConfig("fast");
+  // The models that will answer now: a model known to be used up for the day is skipped.
+  const best = llmConfig("best") ? activeConfig("best") : null;
+  const fast = llmConfig("fast") ? activeConfig("fast") : null;
   const tts = ttsConfig();
   return Response.json({
     llm: best
@@ -24,5 +26,7 @@ export async function GET() {
     tts: tts ? { configured: true, provider: tts.provider } : { configured: false },
     stt: { configured: !!sttConfig() },
     supabase: { configured: supabaseConfigured() },
+    // Exact maths checks, algorithm traces and OCR (python/), when its helper is running.
+    python: { up: await helperUp() },
   });
 }

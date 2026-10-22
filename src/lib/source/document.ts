@@ -155,9 +155,10 @@ function partTitle(heads: string[]): string | undefined {
  * (budget characters), starting a new part at the document's own section
  * headings where possible. Blank, title and contents pages are left out (they
  * have nothing to teach). However long the document, nothing is skipped: it
- * just becomes more parts.
+ * just becomes more parts. `fromPage` plans only the pages from there on
+ * (the rest of a document, re-planned for a model that reads less).
  */
-export function planParts(text: string, budget: number): PartPlan[] {
+export function planParts(text: string, budget: number, fromPage = 0): PartPlan[] {
   const pages = splitPages(text);
   const running = runningLines(pages);
   const room = Math.max(1500, budget - 600); // markers and running headers take some of the budget
@@ -167,7 +168,7 @@ export function planParts(text: string, budget: number): PartPlan[] {
       const body = lines.join("\n");
       return { n: p.n, size: body.length, lines, heads: headingsOf(body).filter((h) => NUMBERED.test(h)) };
     })
-    .filter((p) => p.size >= 150 && !isContents(p.lines));
+    .filter((p) => p.n >= fromPage && p.size >= 150 && !isContents(p.lines));
   const runs: (typeof content)[] = [];
   let cur: typeof content = [];
   let size = 0;

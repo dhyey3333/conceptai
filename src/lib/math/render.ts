@@ -83,7 +83,9 @@ export function splitRich(src: string): Segment[] {
     last = m.index + m[0].length;
   }
   if (last < src.length) out.push({ kind: "text", value: src.slice(last) });
-  return out.map((s) => (s.kind === "text" ? { ...s, value: s.value.replace(/\\\$/g, "$") } : s));
+  // Models sometimes write "\text{high}" in plain text, outside any $...$: show the word, not the command.
+  const unwrap = (t: string) => t.replace(/\\(?:text|textbf|textit|mathrm|mathbf|mathit)\{([^{}$]*)\}/g, "$1");
+  return out.map((s) => (s.kind === "text" ? { ...s, value: unwrap(s.value.replace(/\\\$/g, "$")) } : s));
 }
 
 /** Rich text as one HTML string (no animation). */

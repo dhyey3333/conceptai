@@ -21,6 +21,8 @@ export interface LlmConfig {
   tpmLimit?: number;
   /** reasoning_effort for OpenAI-compatible reasoning models (gpt-oss): low | medium | high. */
   reasoningEffort?: string;
+  /** How long to wait out a per-minute rate limit before giving up (shorter when another model can take over). */
+  patienceMs?: number;
 }
 
 const env = (k: string) => {

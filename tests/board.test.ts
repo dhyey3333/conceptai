@@ -193,6 +193,11 @@ describe("rich text", () => {
     expect(richHtml("<img src=x onerror=alert(1)>")).not.toContain("<img");
   });
 
+  it("shows the word for a \\text{...} written outside maths", () => {
+    expect(richHtml("adding large \\text{high} and \\text{low} values")).toBe("adding large high and low values");
+    expect(splitRich("$\\text{mid} = 3$")[0]).toEqual({ kind: "math", value: "\\text{mid} = 3" });
+  });
+
   it("refuses KaTeX commands that could inject links or HTML", () => {
     const html = richHtml("$\\href{javascript:alert(1)}{x}$");
     expect(html).not.toContain("javascript:");

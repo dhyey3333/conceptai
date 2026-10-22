@@ -14,11 +14,11 @@ export async function POST(req: Request) {
     if (!(file instanceof File)) return jsonError(400, "bad_request", "No file received.");
     if (file.size > MAX_UPLOAD) return jsonError(413, "too_large", "Files up to 15 MB are supported.");
     const buf = new Uint8Array(await file.arrayBuffer());
-    const { text, pages, truncated } = await extractText(file.name, file.type, buf);
-    if (!text.trim()) {
-      return jsonError(422, "no_text", "No readable text found (scanned PDFs need OCR first).");
+    const { text, pages, truncated, ocr } = await extractText(file.name, file.type, buf);
+    if (!text.replace(/\[page \d+\]/g, "").trim()) {
+      return jsonError(422, "no_text", "No readable text found. Scanned pages are read by OCR when ConceptAI's Python helper is running.");
     }
-    return Response.json({ name: file.name.slice(0, 200), text, chars: text.length, pages, truncated });
+    return Response.json({ name: file.name.slice(0, 200), text, chars: text.length, pages, truncated, ocr });
   } catch (err) {
     return jsonError(422, "extract_failed", err instanceof Error ? err.message : "Couldn't read that file.");
   }

@@ -85,6 +85,7 @@ export interface ServerStatus {
   tts: { configured: boolean; provider?: string };
   stt: { configured: boolean };
   supabase: { configured: boolean };
+  python?: { up: boolean };
 }
 
 let statusPromise: Promise<ServerStatus> | null = null;

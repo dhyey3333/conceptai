@@ -131,5 +131,7 @@ describe("rate-limit waits", () => {
     expect(rateLimitWaitMs(new Headers({ "x-ratelimit-reset-tokens": "12.15s" }), "")).toBeCloseTo(12150);
     expect(rateLimitWaitMs(new Headers(), "Rate limit reached ... Please try again in 4.2s. Need more tokens?")).toBeCloseTo(4200);
     expect(rateLimitWaitMs(new Headers(), "nothing useful")).toBeNull();
+    // Google's wording for a used-up daily free quota.
+    expect(rateLimitWaitMs(new Headers(), "Quota exceeded ... limit: 20, model: gemini-3.6-flash\nPlease retry in 17h2m43.383370881s.")).toBeCloseTo(61_363_383, -3);
   });
 });

@@ -36,6 +36,12 @@ export interface GenOptions {
   check?: boolean;
   /** Told when another model takes over because the main one can't answer. */
   onFallback?: (notice: FallbackNotice) => void;
+  /**
+   * Rebuild the prompt for each model the chain tries, so uploaded material is
+   * sized for that model: a Gemini-sized request is refused by a free Groq plan
+   * and crawls on a small local model.
+   */
+  sizeFor?: (cfg: LlmConfig) => { system: string; messages: ChatMsg[] };
 }
 
 const EFFORT_ORDER = ["low", "medium", "high"];
@@ -191,10 +197,12 @@ export async function* streamText(opts: GenOptions): AsyncGenerator<string> {
     opts.onFallback?.({ from: chain[0].model, to: order[0].model, reason: "quota", local: isLocal(order[0]), minutes: Math.max(1, Math.ceil((until - Date.now()) / 60_000)) });
   }
   for (let i = 0; i < order.length; i++) {
-    const cfg = order[i];
+    // Wait out a per-minute limit only briefly when another model can take over; the last one waits longer.
+    const cfg = { ...order[i], patienceMs: i < order.length - 1 ? 8_000 : RATE_LIMIT_PATIENCE_MS };
     let started = false;
     try {
-      const stream = cfg.provider === "anthropic" ? streamAnthropic(cfg, opts) : cfg.provider === "ollama" ? streamOllama(cfg, opts) : streamOpenAi(cfg, opts);
+      const o = opts.sizeFor ? { ...opts, ...opts.sizeFor(cfg) } : opts;
+      const stream = cfg.provider === "anthropic" ? streamAnthropic(cfg, o) : cfg.provider === "ollama" ? streamOllama(cfg, o) : streamOpenAi(cfg, o);
       for await (const chunk of stream) {
         started = true;
         yield chunk;
@@ -363,7 +371,7 @@ export function durationMs(text: string | null | undefined): number | null {
 export function rateLimitWaitMs(headers: Headers, body: string): number | null {
   return (
     retryAfterMs(headers.get("retry-after")) ??
-    durationMs(/try again in ((?:\d+h)?(?:\d+m)?(?:[\d.]+s)?(?:[\d.]+ms)?)/i.exec(body)?.[1]) ??
+    durationMs(/(?:try again|retry) in ((?:\d+h)?(?:\d+m)?(?:[\d.]+s)?(?:[\d.]+ms)?)/i.exec(body)?.[1]) ??
     durationMs(headers.get("x-ratelimit-reset-tokens"))
   );
 }
@@ -371,10 +379,10 @@ export function rateLimitWaitMs(headers: Headers, body: string): number | null {
 /** How long one request may keep waiting out per-minute rate limits before giving up. */
 const RATE_LIMIT_PATIENCE_MS = 120_000;
 
-async function upstream(url: string, init: RequestInit, label: string): Promise<Response> {
+async function upstream(url: string, init: RequestInit, label: string, patienceMs = RATE_LIMIT_PATIENCE_MS): Promise<Response> {
   let res: Response;
   let errorText: string | undefined;
-  const giveUpAt = Date.now() + RATE_LIMIT_PATIENCE_MS;
+  const giveUpAt = Date.now() + patienceMs;
   for (let attempt = 0; ; attempt++) {
     try {
       res = await fetch(url, init);
@@ -401,14 +409,14 @@ async function upstream(url: string, init: RequestInit, label: string): Promise<
       res.status === 401 || res.status === 403 ? 401 : res.status === 429 ? 429 : res.status === 404 ? 404 : res.status === 413 ? 413 : 502;
     // A 429 we could not wait out (a daily limit, or a long wait) means this model is out of quota for now.
     const wait = status === 429 ? rateLimitWaitMs(res.headers, full) : null;
-    const daily = status === 429 && /per day|\(TPD\)|\(RPD\)/i.test(full);
+    const daily = status === 429 && (/per day|PerDay|\(TPD\)|\(RPD\)/i.test(full) || (wait !== null && wait > 60 * 60_000));
     const quota = status === 429 && (daily || (wait !== null && wait > 65_000));
     const msg =
       status === 401
         ? `${label} rejected the API key.`
         : status === 429
           ? quota
-            ? `${label} has used up this plan's ${daily ? "daily" : "current"} allowance for this model. ${wait ? `It frees up in about ${Math.max(1, Math.round(wait / 60_000))} min.` : "Try again later."} To avoid this, add another free provider (e.g. GEMINI_API_KEY) or upgrade the plan.`
+            ? `${label} has used up this plan's ${daily ? "daily" : "current"} allowance for this model. ${wait ? `It frees up in about ${Math.max(1, Math.round(wait / 60_000))} min.` : "Try again later."} To avoid this, ${process.env.GEMINI_API_KEY ? "list more models in GEMINI_MODELS, add another free provider" : "add another free provider (e.g. GEMINI_API_KEY)"} or upgrade the plan.`
             : `${label} rate limit reached (free plans allow only so many tokens per minute and per day). Try again shortly.`
           : status === 413
             ? `${label}: this request is larger than your plan's per-minute token limit. Set LLM_TPM_LIMIT in .env.local to that limit.`
@@ -446,6 +454,7 @@ async function* streamOpenAi(cfg: LlmConfig, opts: GenOptions): AsyncGenerator<s
       signal: opts.signal,
     },
     "The LLM API",
+    cfg.patienceMs,
   );
   for await (const line of lines(res.body!)) {
     if (!line.startsWith("data:")) continue;
@@ -500,6 +509,7 @@ async function* streamOllama(cfg: LlmConfig, opts: GenOptions): AsyncGenerator<s
       signal: opts.signal,
     },
     "Ollama",
+    cfg.patienceMs,
   );
   let res: Response;
   try {

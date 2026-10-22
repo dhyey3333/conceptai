@@ -18,3 +18,7 @@ coverage/
 
 # the launcher's logs and its "starting" page
 logs/
+
+# the Python helper's environment (recreated by uv)
+python/.venv/
+__pycache__/

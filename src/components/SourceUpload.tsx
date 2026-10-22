@@ -10,6 +10,8 @@ export interface Source {
   chars: number;
   pages?: number;
   truncated?: boolean;
+  /** Pages read by OCR (scanned pages). */
+  ocr?: number;
 }
 
 const ACCEPT = ".pdf,.pptx,.docx,.txt,.md,application/pdf,text/plain,text/markdown";
@@ -61,6 +63,7 @@ export function SourceUpload({
           <span className="shrink-0 text-muted">
             {s.pages ? `${s.pages} pages · ` : ""}
             {Math.round(s.chars / 1000)}k chars{s.truncated ? " (trimmed)" : ""}
+            {s.ocr ? ` · ${s.ocr} scanned page${s.ocr === 1 ? "" : "s"} read by OCR` : ""}
           </span>
           <button aria-label={`Remove ${s.name}`} onClick={() => onChange(sources.filter((_, j) => j !== i))} className="text-muted hover:text-fg">
             <X size={13} />

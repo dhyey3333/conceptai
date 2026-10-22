@@ -109,6 +109,10 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           )}
         </div>
         {status?.llm.problem && <div className="text-danger">{status.llm.problem}</div>}
+        <div className="flex items-center gap-2" title="Exact maths checks (SymPy), real algorithm traces and OCR for scanned PDFs">
+          <span className={cn("h-2 w-2 rounded-full", status?.python?.up ? "bg-ok" : "bg-subtle")} />
+          Python tools: {status?.python?.up ? "on" : "off"}
+        </div>
         <div className="flex items-center gap-2">
           <span className={cn("h-2 w-2 rounded-full", status?.tts.configured ? "bg-ok" : "bg-subtle")} />
           Voice: {status?.tts.configured ? `AI (${status.tts.provider})` : "browser"}

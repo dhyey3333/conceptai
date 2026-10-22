@@ -17,6 +17,7 @@ import type { Level } from "@/lib/lesson/types";
 import { sanitizeQuiz, type Quiz } from "@/lib/quiz/schema";
 import { extractJsonObject } from "@/lib/stream/jsonObjects";
 import { completeText, LlmError } from "./llm";
+import { callHelper, mathFindings } from "./helper";
 import { checkBeatsPrompt, checkNotesPrompt, checkQuizPrompt } from "./prompts";
 import type { Tier } from "./env";
 import type { StreamEvent } from "./http";
@@ -28,11 +29,33 @@ export interface CheckSubject {
   /** One or two lines: which lesson part this is, or which question it answers. */
   context: string;
   research?: string;
+  /** A real run of the algorithm being taught (Python helper): the correct steps to hold the material to. */
+  reference?: string;
 }
 
 interface CheckOpts {
   tier?: Tier;
   signal: AbortSignal;
+  /** false: no exact maths checks from the Python helper. */
+  helper?: boolean;
+}
+
+const INLINE_MATH = /\$([^$]+)\$/g;
+
+/** Every equation and derivation drawn in the beats, for the exact (SymPy) checks; ids are "beat.item". */
+function mathItems(beats: Beat[]): { id: string; latex?: string; lines?: string[] }[] {
+  const out: { id: string; latex?: string; lines?: string[] }[] = [];
+  beats.forEach((b, i) =>
+    b.draw.forEach((d, j) => {
+      if (d.type === "math") out.push({ id: `${i}.${j}`, latex: d.latex });
+      else if (d.type === "steps") out.push({ id: `${i}.${j}`, lines: d.lines.map((l) => l.latex) });
+      else {
+        const texts = d.type === "text" ? [d.text] : d.type === "bullets" ? d.items : d.type === "table" ? d.rows.flat() : [];
+        texts.forEach((t, k) => [...t.matchAll(INLINE_MATH)].forEach((m, n) => out.push({ id: `${i}.${j}.${k}.${n}`, latex: m[1] })));
+      }
+    }),
+  );
+  return out;
 }
 
 export function verifyEnabled(): boolean {
@@ -120,10 +143,20 @@ export async function checkBeats(subject: CheckSubject, beats: Beat[], opts: Che
   const current = [...beats];
   const fixes: BeatFix[] = [];
   let checked = true;
+  // Exact arithmetic and algebra (SymPy, via the Python helper): what it finds is certainly wrong.
+  const exact = opts.helper === false ? [] : await mathFindings(mathItems(beats));
+  const exactFor = (from: number, to: number) =>
+    exact.filter((f) => Number(f.id.split(".")[0]) >= from && Number(f.id.split(".")[0]) < to).map((f) => `[beat ${f.id.split(".")[0]}] ${f.message}`);
   // Check beats [from, to); if the reviewer runs out of room, check each half instead.
   const range = async (from: number, to: number): Promise<void> => {
     // Earlier narration (already checked, with its corrections) lets the reviewer follow a trace across chunks.
-    const prompt = checkBeatsPrompt({ ...subject, beats: current.slice(from, to), first: from, earlier: current.slice(0, from).map((b) => b.say) });
+    const prompt = checkBeatsPrompt({
+      ...subject,
+      beats: current.slice(from, to),
+      first: from,
+      earlier: current.slice(0, from).map((b) => b.say),
+      exact: exactFor(from, to),
+    });
     const { verdict, cutOff } = await review(prompt, opts);
     if (verdict === undefined) {
       if (cutOff && to - from > 1) {
@@ -142,6 +175,31 @@ export async function checkBeats(subject: CheckSubject, beats: Beat[], opts: Che
   const size = chunkSize();
   for (let from = 0; from < current.length; from += size) await range(from, Math.min(current.length, from + size));
   return { fixes, checked };
+}
+
+/** The first list of 3+ numbers a part shows (its worked example's input), from array items or written lists. */
+export function exampleInput(beats: Beat[]): number[] | undefined {
+  for (const b of beats) {
+    for (const d of b.draw) {
+      if (d.type === "array") {
+        const nums = d.values.map(Number);
+        if (nums.length >= 3 && nums.every(Number.isFinite)) return nums;
+      }
+      const m = /\[\s*(-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?){2,})\s*\]/.exec(JSON.stringify(d));
+      if (m) return m[1].split(/\s*,\s*/).map(Number);
+    }
+    const m = /\[\s*(-?\d+(?:\s*,\s*-?\d+){2,})\s*\]/.exec(b.say);
+    if (m) return m[1].split(/\s*,\s*/).map(Number);
+  }
+  return undefined;
+}
+
+/** A real run of the part's algorithm on the input the part itself used (or undefined). */
+async function traceForExample(subject: CheckSubject, beats: Beat[]): Promise<string | undefined> {
+  const input = exampleInput(beats);
+  if (!input) return undefined;
+  const r = await callHelper<{ trace: { text: string } | null }>("/trace", { text: `${subject.topic}\n${subject.context}`, input }, 3000);
+  return r?.trace?.text;
 }
 
 /**
@@ -168,7 +226,9 @@ export async function* writeThenCheck(
     return;
   }
   yield { type: "checking", beats: beats.length };
-  const { fixes, checked } = await checkBeats(subject, beats, opts);
+  // Whatever example the part actually used, the check gets the true run of the algorithm on THAT input.
+  const actual = subject.reference && opts.helper !== false ? await traceForExample(subject, beats) : undefined;
+  const { fixes, checked } = await checkBeats(actual ? { ...subject, reference: actual } : subject, beats, opts);
   for (const f of fixes) yield { type: "fix", index: f.index, beat: f.beat };
   yield { ...done, checked, fixes: fixes.length };
 }
@@ -221,7 +281,10 @@ export async function checkNotes(
   let fixes = 0;
   let checked = markdown.trim().length > 0;
   for (const chunk of chunkMarkdown(markdown)) {
-    const { verdict } = await review(checkNotesPrompt({ ...subject, notes: chunk }), opts, 4000);
+    // Display and inline maths in the notes, checked exactly first.
+    const maths = [...chunk.matchAll(/\$\$([\s\S]+?)\$\$|\$([^$\n]+)\$/g)].map((m, i) => ({ id: `${i}`, latex: (m[1] ?? m[2]).trim() }));
+    const exact = opts.helper === false ? [] : (await mathFindings(maths)).map((f) => f.message);
+    const { verdict } = await review(checkNotesPrompt({ ...subject, notes: chunk, exact }), opts, 4000);
     if (verdict === undefined) {
       checked = false;
       continue;

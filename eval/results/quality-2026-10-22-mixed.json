@@ -1,0 +1,2611 @@
+{
+  "date": "2026-10-22",
+  "rows": [
+    {
+      "topic": "Heap sort",
+      "part": "Algorithm Derivation: Build-Max-Heap & Extract-Max",
+      "without": {
+        "beats": [
+          {
+            "say": "Alright, so we've established what a max-heap is and how it's represented in an array. Now, let's get into the algorithms that make Heap Sort possible, starting with the fundamental `Max-Heapify` subroutine.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "Algorithm Derivation: Build-Max-Heap & Extract-Max"
+              },
+              {
+                "type": "text",
+                "text": "1. **Max-Heapify(A, i)**: Restore max-heap property at node $i$",
+                "tone": "definition"
+              }
+            ]
+          },
+          {
+            "say": "The `Max-Heapify` function takes an array `A` and an index `i`. Its job is to ensure that the subtree rooted at `i` satisfies the max-heap property, assuming its children's subtrees are *already* max-heaps. It does this by comparing the node at `i` with its children.",
+            "draw": [
+              {
+                "type": "flowchart",
+                "direction": "TB",
+                "nodes": [
+                  {
+                    "id": "start",
+                    "label": "Max-Heapify(A, i)",
+                    "shape": "round"
+                  },
+                  {
+                    "id": "left",
+                    "label": "left = 2i+1\\nright = 2i+2",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "largest",
+                    "label": "largest = i",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "compareL",
+                    "label": "if left < heapSize AND A[left] > A[largest]",
+                    "shape": "diamond"
+                  },
+                  {
+                    "id": "setL",
+                    "label": "largest = left",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "compareR",
+                    "label": "if right < heapSize AND A[right] > A[largest]",
+                    "shape": "diamond"
+                  },
+                  {
+                    "id": "setR",
+                    "label": "largest = right",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "swap",
+                    "label": "if largest != i: swap A[i], A[largest]",
+                    "shape": "diamond"
+                  },
+                  {
+                    "id": "recurse",
+                    "label": "Max-Heapify(A, largest)",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "end",
+                    "label": "Return",
+                    "shape": "round"
+                  }
+                ],
+                "edges": [
+                  {
+                    "from": "start",
+                    "to": "left"
+                  },
+                  {
+                    "from": "left",
+                    "to": "largest"
+                  },
+                  {
+                    "from": "largest",
+                    "to": "compareL"
+                  },
+                  {
+                    "from": "compareL",
+                    "to": "setL",
+                    "label": "True"
+                  },
+                  {
+                    "from": "setL",
+                    "to": "compareR"
+                  },
+                  {
+                    "from": "compareL",
+                    "to": "compareR",
+                    "label": "False"
+                  },
+                  {
+                    "from": "compareR",
+                    "to": "setR",
+                    "label": "True"
+                  },
+                  {
+                    "from": "setR",
+                    "to": "swap"
+                  },
+                  {
+                    "from": "compareR",
+                    "to": "swap",
+                    "label": "False"
+                  },
+                  {
+                    "from": "swap",
+                    "to": "recurse",
+                    "label": "True"
+                  },
+                  {
+                    "from": "swap",
+                    "to": "end",
+                    "label": "False"
+                  },
+                  {
+                    "from": "recurse",
+                    "to": "end"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "If the parent is smaller than its largest child, we swap them. This might cause a new violation at the child's position, so we recursively call `Max-Heapify` on the subtree where the swap occurred. Let's see an example of this process.",
+            "draw": [
+              {
+                "type": "text",
+                "text": "Example: Max-Heapify(A, 1) on array [16, 4, 10, 14, 7, 9, 3, 2, 8, 1]",
+                "tone": "example"
+              },
+              {
+                "type": "tree",
+                "nodes": [
+                  {
+                    "id": "0",
+                    "label": "16"
+                  },
+                  {
+                    "id": "1",
+                    "label": "4",
+                    "parent": "0",
+                    "side": "left"
+                  },
+                  {
+                    "id": "2",
+                    "label": "10",
+                    "parent": "0",
+                    "side": "right"
+                  },
+                  {
+                    "id": "3",
+                    "label": "14",
+                    "parent": "1",
+                    "side": "left"
+                  },
+                  {
+                    "id": "4",
+                    "label": "7",
+                    "parent": "1",
+                    "side": "right"
+                  },
+                  {
+                    "id": "5",
+                    "label": "9",
+                    "parent": "2",
+                    "side": "left"
+                  },
+                  {
+                    "id": "6",
+                    "label": "3",
+                    "parent": "2",
+                    "side": "right"
+                  },
+                  {
+                    "id": "7",
+                    "label": "2",
+                    "parent": "3",
+                    "side": "left"
+                  },
+                  {
+                    "id": "8",
+                    "label": "8",
+                    "parent": "3",
+                    "side": "right"
+                  },
+                  {
+                    "id": "9",
+                    "label": "1",
+                    "parent": "4",
+                    "side": "left"
+                  }
+                ],
+                "binary": true,
+                "highlight": [
+                  "1"
+                ],
+                "caption": "Initial state: Node 4 (index 1) violates max-heap property"
+              }
+            ]
+          },
+          {
+            "say": "Here, node 4 at index 1 is smaller than its left child, 14, at index 3. So, we swap 4 and 14. Now, the new node 4 at index 3 might violate the property, so we recursively call `Max-Heapify` on that subtree.",
+            "draw": [
+              {
+                "type": "tree",
+                "nodes": [
+                  {
+                    "id": "0",
+                    "label": "16"
+                  },
+                  {
+                    "id": "1",
+                    "label": "14",
+                    "parent": "0",
+                    "side": "left"
+                  },
+                  {
+                    "id": "2",
+                    "label": "10",
+                    "parent": "0",
+                    "side": "right"
+                  },
+                  {
+                    "id": "3",
+                    "label": "4",
+                    "parent": "1",
+                    "side": "left"
+                  },
+                  {
+                    "id": "4",
+                    "label": "7",
+                    "parent": "1",
+                    "side": "right"
+                  },
+                  {
+                    "id": "5",
+                    "label": "9",
+                    "parent": "2",
+                    "side": "left"
+                  },
+                  {
+                    "id": "6",
+                    "label": "3",
+                    "parent": "2",
+                    "side": "right"
+                  },
+                  {
+                    "id": "7",
+                    "label": "2",
+                    "parent": "3",
+                    "side": "left"
+                  },
+                  {
+                    "id": "8",
+                    "label": "8",
+                    "parent": "3",
+                    "side": "right"
+                  },
+                  {
+                    "id": "9",
+                    "label": "1",
+                    "parent": "4",
+                    "side": "left"
+                  }
+                ],
+                "binary": true,
+                "highlight": [
+                  "1",
+                  "3"
+                ],
+                "caption": "Step 1: Swap A[1] and A[3]. Recurse on index 3."
+              }
+            ]
+          },
+          {
+            "say": "At index 3, node 4 is smaller than its right child, 8, at index 8. We swap them. Now, node 4 is at index 8, which is a leaf node, so the recursion stops. The subtree rooted at the original index 1 is now a max-heap!",
+            "draw": [
+              {
+                "type": "tree",
+                "nodes": [
+                  {
+                    "id": "0",
+                    "label": "16"
+                  },
+                  {
+                    "id": "1",
+                    "label": "14",
+                    "parent": "0",
+                    "side": "left"
+                  },
+                  {
+                    "id": "2",
+                    "label": "10",
+                    "parent": "0",
+                    "side": "right"
+                  },
+                  {
+                    "id": "3",
+                    "label": "8",
+                    "parent": "1",
+                    "side": "left"
+                  },
+                  {
+                    "id": "4",
+                    "label": "7",
+                    "parent": "1",
+                    "side": "right"
+                  },
+                  {
+                    "id": "5",
+                    "label": "9",
+                    "parent": "2",
+                    "side": "left"
+                  },
+                  {
+                    "id": "6",
+                    "label": "3",
+                    "parent": "2",
+                    "side": "right"
+                  },
+                  {
+                    "id": "7",
+                    "label": "2",
+                    "parent": "3",
+                    "side": "left"
+                  },
+                  {
+                    "id": "8",
+                    "label": "4",
+                    "parent": "3",
+                    "side": "right"
+                  },
+                  {
+                    "id": "9",
+                    "label": "1",
+                    "parent": "4",
+                    "side": "left"
+                  }
+                ],
+                "binary": true,
+                "highlight": [
+                  "3",
+                  "8"
+                ],
+                "caption": "Step 2: Swap A[3] and A[8]. Recurse on index 8 (leaf)."
+              },
+              {
+                "type": "text",
+                "text": "2. **Build-Max-Heap(A)**: Convert an array into a max-heap",
+                "tone": "definition"
+              }
+            ]
+          },
+          {
+            "say": "To build a complete max-heap from an arbitrary array, we call `Max-Heapify` on all non-leaf nodes, starting from the last non-leaf node and working our way up to the root. This bottom-up approach ensures that when `Max-Heapify` is called, its children's subtrees are already heaps.",
+            "draw": [
+              {
+                "type": "math",
+                "latex": "\\text{for } i = \\lfloor \\frac{N}{2} \\rfloor - 1 \\text{ down to } 0:",
+                "label": "Build-Max-Heap loop",
+                "boxed": false
+              },
+              {
+                "type": "text",
+                "text": "\\quad \\text{Max-Heapify}(A, i)",
+                "tone": "normal"
+              },
+              {
+                "type": "text",
+                "text": "The first non-leaf node is at index $\\lfloor N/2 \\rfloor - 1$ (for 0-based indexing).",
+                "tone": "tip"
+              }
+            ]
+          }
+        ],
+        "firstBeat": 9505,
+        "total": 43393,
+        "fixes": 1,
+        "checked": true,
+        "equations": 3,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": {
+          "input": [
+            16,
+            4,
+            10,
+            14,
+            7,
+            9,
+            3,
+            2,
+            8,
+            1
+          ],
+          "shown": 0,
+          "wrong": 0,
+          "examples": []
+        }
+      },
+      "with": {
+        "beats": [
+          {
+            "say": "Alright, so in our last session, we understood the core concept of a binary heap and how we represent it efficiently using an array, along with the parent-child index formulas. Now, let's dive into the algorithms that make Heap Sort work, starting with how we maintain the max-heap property.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "Algorithm Derivation: Build-Max-Heap & Extract-Max"
+              },
+              {
+                "type": "text",
+                "text": "The core operation: **Max-Heapify**",
+                "tone": "important"
+              },
+              {
+                "type": "text",
+                "text": "Purpose: Maintain the max-heap property at a given node $i$.",
+                "tone": "normal"
+              }
+            ]
+          },
+          {
+            "say": "Imagine you have a node `i` whose children are already max-heaps, but `i` itself might be smaller than one of its children, violating the max-heap property. Max-Heapify's job is to fix this! It compares the node `i` with its children, finds the largest among them, and if `i` isn't the largest, it swaps `i` with the largest child.",
+            "draw": [
+              {
+                "type": "flowchart",
+                "direction": "TB",
+                "nodes": [
+                  {
+                    "id": "start",
+                    "label": "Max-Heapify(A, i, heap_size)",
+                    "shape": "round"
+                  },
+                  {
+                    "id": "init",
+                    "label": "largest = i\\nleft = 2i+1\\nright = 2i+2",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "check_left",
+                    "label": "Is left < heap_size AND A[left] > A[largest]?",
+                    "shape": "diamond"
+                  },
+                  {
+                    "id": "set_left",
+                    "label": "largest = left",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "check_right",
+                    "label": "Is right < heap_size AND A[right] > A[largest]?",
+                    "shape": "diamond"
+                  },
+                  {
+                    "id": "set_right",
+                    "label": "largest = right",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "check_swap",
+                    "label": "Is largest != i?",
+                    "shape": "diamond"
+                  },
+                  {
+                    "id": "swap",
+                    "label": "Swap A[i], A[largest]",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "recurse",
+                    "label": "Max-Heapify(A, largest, heap_size)",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "end",
+                    "label": "End",
+                    "shape": "round"
+                  }
+                ],
+                "edges": [
+                  {
+                    "from": "start",
+                    "to": "init"
+                  },
+                  {
+                    "from": "init",
+                    "to": "check_left"
+                  },
+                  {
+                    "from": "check_left",
+                    "to": "set_left",
+                    "label": "Yes"
+                  },
+                  {
+                    "from": "set_left",
+                    "to": "check_right"
+                  },
+                  {
+                    "from": "check_left",
+                    "to": "check_right",
+                    "label": "No"
+                  },
+                  {
+                    "from": "check_right",
+                    "to": "set_right",
+                    "label": "Yes"
+                  },
+                  {
+                    "from": "set_right",
+                    "to": "check_swap"
+                  },
+                  {
+                    "from": "check_right",
+                    "to": "check_swap",
+                    "label": "No"
+                  },
+                  {
+                    "from": "check_swap",
+                    "to": "swap",
+                    "label": "Yes"
+                  },
+                  {
+                    "from": "swap",
+                    "to": "recurse"
+                  },
+                  {
+                    "from": "recurse",
+                    "to": "end"
+                  },
+                  {
+                    "from": "check_swap",
+                    "to": "end",
+                    "label": "No"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "If a swap occurs, the original value at `i` has moved down, potentially violating the heap property at its new position. So, we recursively call Max-Heapify on the child node that was swapped. This ensures the property is restored all the way down the tree. Now, how do we build an entire max-heap from an unsorted array?",
+            "draw": [
+              {
+                "type": "text",
+                "text": "Algorithm: **Build-Max-Heap(A)**",
+                "tone": "important"
+              },
+              {
+                "type": "bullets",
+                "items": [
+                  "Start from the last non-leaf node (index $\\lfloor N/2 \\rfloor - 1$ for 0-indexed array).",
+                  "Call Max-Heapify on each node, moving upwards to the root (index 0)."
+                ]
+              },
+              {
+                "type": "array",
+                "values": [
+                  "5",
+                  "2",
+                  "9",
+                  "1",
+                  "7",
+                  "3"
+                ],
+                "label": "A",
+                "start": 0,
+                "caption": "Initial unsorted array",
+                "id": "arr_initial"
+              },
+              {
+                "type": "tree",
+                "nodes": [
+                  {
+                    "id": "0",
+                    "label": "5"
+                  },
+                  {
+                    "id": "1",
+                    "label": "2",
+                    "parent": "0",
+                    "side": "left"
+                  },
+                  {
+                    "id": "2",
+                    "label": "9",
+                    "parent": "0",
+                    "side": "right"
+                  },
+                  {
+                    "id": "3",
+                    "label": "1",
+                    "parent": "1",
+                    "side": "left"
+                  },
+                  {
+                    "id": "4",
+                    "label": "7",
+                    "parent": "1",
+                    "side": "right"
+                  },
+                  {
+                    "id": "5",
+                    "label": "3",
+                    "parent": "2",
+                    "side": "left"
+                  }
+                ],
+                "binary": true,
+                "caption": "Initial tree representation",
+                "id": "tree_initial"
+              }
+            ]
+          }
+        ],
+        "firstBeat": 7175,
+        "total": 60634,
+        "fixes": 0,
+        "checked": true,
+        "equations": 2,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": {
+          "input": [
+            5,
+            2,
+            9,
+            1,
+            7,
+            3
+          ],
+          "shown": 0,
+          "wrong": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "topic": "Projectile motion",
+      "part": "Introduction & Component Analysis",
+      "without": {
+        "beats": [
+          {
+            "say": "Hey future engineers and doctors! Ever thrown a ball, kicked a football, or watched a cannonball fly? That beautiful, curved path it takes through the air is what we call projectile motion. Today, we're going to master understanding and predicting that path!",
+            "draw": [
+              {
+                "type": "title",
+                "text": "Projectile Motion: Mastering the Curved Path"
+              }
+            ]
+          },
+          {
+            "say": "So, what exactly is projectile motion? It's the motion of an object thrown or projected into the air, subject only to the force of gravity. Think of it as free fall, but with an initial push that sends it sideways too!",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "1. Introduction & Component Analysis"
+              },
+              {
+                "type": "text",
+                "text": "**Projectile Motion**: Motion of an object projected into the air, subject only to gravity.",
+                "tone": "definition"
+              }
+            ]
+          },
+          {
+            "say": "To simplify our analysis and make it manageable for calculations, we make a few crucial assumptions. These help us focus on the core physics without getting bogged down by minor effects like air resistance.",
+            "draw": [
+              {
+                "type": "text",
+                "text": "**Assumptions for Ideal Projectile Motion:**",
+                "tone": "important"
+              },
+              {
+                "type": "bullets",
+                "items": [
+                  "Air resistance is negligible.",
+                  "Effect of Earth's rotation is negligible.",
+                  "Acceleration due to gravity ($g$) is constant in magnitude and direction."
+                ],
+                "ordered": false
+              }
+            ]
+          },
+          {
+            "say": "Now, let's visualize this path and see how we break down the motion. Imagine launching a projectile with an initial velocity, 'u', at an angle, theta, to the horizontal. The key insight is that we can analyze its horizontal and vertical movements *independently*!",
+            "draw": [
+              {
+                "type": "figure",
+                "height": 100,
+                "caption": "Projectile Path with Initial Velocity Components",
+                "shapes": [
+                  {
+                    "shape": "line",
+                    "x1": 0,
+                    "y1": 90,
+                    "x2": 100,
+                    "y2": 90
+                  },
+                  {
+                    "shape": "arrow",
+                    "x1": 10,
+                    "y1": 90,
+                    "x2": 90,
+                    "y2": 90,
+                    "color": "blue",
+                    "label": "x (horizontal)"
+                  },
+                  {
+                    "shape": "arrow",
+                    "x1": 10,
+                    "y1": 90,
+                    "x2": 10,
+                    "y2": 10,
+                    "color": "blue",
+                    "label": "y (vertical)"
+                  },
+                  {
+                    "shape": "curve",
+                    "points": [
+                      [
+                        10,
+                        90
+                      ],
+                      [
+                        30,
+                        50
+                      ],
+                      [
+                        50,
+                        20
+                      ],
+                      [
+                        70,
+                        50
+                      ],
+                      [
+                        90,
+                        90
+                      ]
+                    ],
+                    "color": "red"
+                  },
+                  {
+                    "shape": "arrow",
+                    "x1": 10,
+                    "y1": 90,
+                    "x2": 25,
+                    "y2": 70,
+                    "color": "purple",
+                    "label": "u"
+                  },
+                  {
+                    "shape": "arc",
+                    "cx": 10,
+                    "cy": 90,
+                    "r": 10,
+                    "start": 0,
+                    "end": 53.13,
+                    "color": "purple",
+                    "label": "\\theta"
+                  },
+                  {
+                    "shape": "arrow",
+                    "x1": 10,
+                    "y1": 90,
+                    "x2": 25,
+                    "y2": 90,
+                    "color": "green",
+                    "label": "$u_x = u \\cos\\theta$"
+                  },
+                  {
+                    "shape": "arrow",
+                    "x1": 10,
+                    "y1": 90,
+                    "x2": 10,
+                    "y2": 70,
+                    "color": "orange",
+                    "label": "$u_y = u \\sin\\theta$"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "Notice how we resolve the initial velocity 'u' into its horizontal component, $u_x$, and its vertical component, $u_y$. The magic here is that the horizontal motion is uniform, while the vertical motion is uniformly accelerated, just like free fall!",
+            "draw": [],
+            "point": "initial_u"
+          }
+        ],
+        "firstBeat": 14484,
+        "total": 112412,
+        "fixes": 1,
+        "checked": true,
+        "equations": 1,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": null
+      },
+      "with": {
+        "beats": [
+          {
+            "say": "Hey everyone! Ever wondered why a cricket ball, once hit, follows that beautiful curved path before landing? Or how an arrow shot from a bow always arcs downwards? Today, we're going to master exactly that: Projectile Motion!",
+            "draw": [
+              {
+                "type": "title",
+                "text": "Projectile Motion: Mastering the Curved Path"
+              }
+            ]
+          },
+          {
+            "say": "Projectile motion is the motion of an object thrown or projected into the air, subject only to the acceleration of gravity. We're talking about objects moving in two dimensions, tracing a parabolic path.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "1. Introduction & Component Analysis"
+              },
+              {
+                "type": "text",
+                "text": "**Projectile Motion**: Motion of an object projected into the air, subject only to gravity.",
+                "tone": "definition"
+              },
+              {
+                "type": "bullets",
+                "items": [
+                  "Object is called a **projectile**.",
+                  "Path is called a **trajectory** (usually parabolic)."
+                ],
+                "ordered": false
+              }
+            ]
+          },
+          {
+            "say": "To simplify our analysis, we make a couple of crucial assumptions. First, we ignore air resistance – imagine a vacuum. Second, we assume the acceleration due to gravity, 'g', is constant in magnitude and direction throughout the motion.",
+            "draw": [
+              {
+                "type": "text",
+                "text": "**Assumptions for Ideal Projectile Motion:**",
+                "tone": "important"
+              },
+              {
+                "type": "bullets",
+                "items": [
+                  "Air resistance is **negligible**.",
+                  "Acceleration due to gravity ($g$) is **constant** in magnitude and direction."
+                ],
+                "ordered": false
+              }
+            ]
+          },
+          {
+            "say": "Now, how do we analyze this 2D motion? The trick is to break it down! We treat the horizontal and vertical motions completely independently. Let's set up our coordinate system and visualize the path.",
+            "draw": [
+              {
+                "type": "text",
+                "text": "**Component Analysis:** Treat horizontal and vertical motion independently.",
+                "tone": "normal"
+              },
+              {
+                "type": "figure",
+                "height": 80,
+                "caption": "Projectile Trajectory",
+                "shapes": [
+                  {
+                    "shape": "line",
+                    "x1": 10,
+                    "y1": 70,
+                    "x2": 90,
+                    "y2": 70,
+                    "color": "blue",
+                    "label": "x"
+                  },
+                  {
+                    "shape": "line",
+                    "x1": 10,
+                    "y1": 70,
+                    "x2": 10,
+                    "y2": 10,
+                    "color": "red",
+                    "label": "y"
+                  },
+                  {
+                    "shape": "curve",
+                    "points": [
+                      [
+                        10,
+                        70
+                      ],
+                      [
+                        30,
+                        30
+                      ],
+                      [
+                        50,
+                        15
+                      ],
+                      [
+                        70,
+                        30
+                      ],
+                      [
+                        90,
+                        70
+                      ]
+                    ],
+                    "color": "green",
+                    "label": "Trajectory"
+                  },
+                  {
+                    "shape": "point",
+                    "x": 10,
+                    "y": 70,
+                    "label": "O (Origin)"
+                  }
+                ],
+                "id": "trajectory_fig"
+              }
+            ]
+          },
+          {
+            "say": "At the start, the projectile is launched with an initial velocity, let's call it 'u', at an angle 'theta' with the horizontal. We can resolve this initial velocity into its horizontal and vertical components, $u_x$ and $u_y$ respectively.",
+            "draw": [
+              {
+                "type": "figure",
+                "height": 80,
+                "caption": "Projectile Trajectory with Initial Velocity Components",
+                "shapes": [
+                  {
+                    "shape": "line",
+                    "x1": 10,
+                    "y1": 70,
+                    "x2": 90,
+                    "y2": 70,
+                    "color": "blue",
+                    "label": "x"
+                  },
+                  {
+                    "shape": "line",
+                    "x1": 10,
+                    "y1": 70,
+                    "x2": 10,
+                    "y2": 10,
+                    "color": "red",
+                    "label": "y"
+                  },
+                  {
+                    "shape": "curve",
+                    "points": [
+                      [
+                        10,
+                        70
+                      ],
+                      [
+                        30,
+                        30
+                      ],
+                      [
+                        50,
+                        15
+                      ],
+                      [
+                        70,
+                        30
+                      ],
+                      [
+                        90,
+                        70
+                      ]
+                    ],
+                    "color": "green",
+                    "label": "Trajectory"
+                  },
+                  {
+                    "shape": "point",
+                    "x": 10,
+                    "y": 70,
+                    "label": "O"
+                  },
+                  {
+                    "shape": "arrow",
+                    "x1": 10,
+                    "y1": 70,
+                    "x2": 30,
+                    "y2": 50,
+                    "color": "purple",
+                    "label": "u"
+                  },
+                  {
+                    "shape": "arrow",
+                    "x1": 10,
+                    "y1": 70,
+                    "x2": 30,
+                    "y2": 70,
+                    "color": "orange",
+                    "label": "$u_x = u \\cos \\theta$"
+                  },
+                  {
+                    "shape": "arrow",
+                    "x1": 30,
+                    "y1": 70,
+                    "x2": 30,
+                    "y2": 50,
+                    "label": "$u_y = u \\sin \\theta$"
+                  },
+                  {
+                    "shape": "arc",
+                    "cx": 10,
+                    "cy": 70,
+                    "r": 15,
+                    "start": 0,
+                    "end": 315,
+                    "label": "$\\theta$"
+                  }
+                ]
+              }
+            ],
+            "point": "trajectory_fig"
+          }
+        ],
+        "firstBeat": 6858,
+        "total": 113383,
+        "fixes": 0,
+        "checked": false,
+        "equations": 1,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": null
+      }
+    },
+    {
+      "topic": "Bubble sort",
+      "part": "Bubble Sort Algorithm: Step-by-Step",
+      "without": {
+        "beats": [
+          {
+            "say": "Now that we have the intuition of elements 'bubbling up', let's formalize this into the Bubble Sort algorithm itself. We'll break down its precise steps, look at the pseudocode, and then analyze its performance.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "Bubble Sort Algorithm: Step-by-Step"
+              }
+            ]
+          },
+          {
+            "say": "The core idea is to repeatedly go through the list. In each pass, we compare adjacent elements and swap them if they are in the wrong order. This process ensures that the largest unsorted element 'bubbles up' to its correct position at the end of the unsorted part.",
+            "draw": [
+              {
+                "type": "text",
+                "text": "Algorithm Steps:",
+                "tone": "normal"
+              },
+              {
+                "type": "bullets",
+                "items": [
+                  "Repeatedly traverse the list (passes).",
+                  "Compare adjacent elements.",
+                  "Swap if they are in the wrong order."
+                ],
+                "ordered": false
+              }
+            ]
+          },
+          {
+            "say": "We do this for `n-1` passes, where `n` is the number of elements. Each pass places one element correctly. Crucially, in each pass, we only need to compare elements up to the `n-1-i`-th position, because the last `i` elements are already sorted.",
+            "draw": [
+              {
+                "type": "text",
+                "text": "Outer loop: controls the number of passes ($n-1$ passes).",
+                "tone": "normal"
+              },
+              {
+                "type": "text",
+                "text": "Inner loop: performs comparisons and swaps in each pass.",
+                "tone": "normal"
+              },
+              {
+                "type": "text",
+                "text": "Optimization: After pass $i$, the last $i$ elements are sorted.",
+                "tone": "tip"
+              }
+            ]
+          },
+          {
+            "say": "Here's the full pseudocode. Notice the nested loops: the outer loop controls the number of passes, and the inner loop handles the comparisons and swaps within each pass. Let's quickly trace one pass with a small example.",
+            "draw": [
+              {
+                "type": "math",
+                "latex": "\\begin{array}{l}\n\\textbf{BubbleSort}(\\text{array } A, n)\\\\\n\\quad \\textbf{for } i \\textbf{ from } 0 \\textbf{ to } n-2:\\\\\n\\quad \\quad \\textbf{for } j \\textbf{ from } 0 \\textbf{ to } n-2-i:\\\\\n\\quad \\quad \\quad \\textbf{if } A[j] > A[j+1]:\\\\\n\\quad \\quad \\quad \\quad \\text{swap}(A[j], A[j+1])\n\\end{array}",
+                "label": "Bubble Sort Pseudocode",
+                "boxed": true
+              },
+              {
+                "type": "array",
+                "values": [
+                  "3",
+                  "1",
+                  "2"
+                ],
+                "label": "A",
+                "highlight": [
+                  0,
+                  1
+                ],
+                "caption": "Initial array"
+              },
+              {
+                "type": "array",
+                "values": [
+                  "1",
+                  "3",
+                  "2"
+                ],
+                "label": "A",
+                "highlight": [
+                  1,
+                  2
+                ],
+                "caption": "After comparing (3,1) and swapping"
+              },
+              {
+                "type": "array",
+                "values": [
+                  "1",
+                  "2",
+                  "3"
+                ],
+                "label": "A",
+                "highlight": [
+                  2
+                ],
+                "caption": "After comparing (3,2) and swapping (Pass 1 complete)"
+              }
+            ]
+          },
+          {
+            "say": "Now, let's think about how many operations this takes. The nested loops are a big hint. For an array of `n` elements, how many comparisons do you think happen in the worst case, where every element needs to move significantly?",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "Time Complexity"
+              },
+              {
+                "type": "text",
+                "text": "**Time Complexity** measures how execution time grows with input size $n$.",
+                "tone": "definition"
+              },
+              {
+                "type": "bullets",
+                "items": [
+                  "Outer loop runs $n-1$ times.",
+                  "Inner loop runs $n-1$, then $n-2$, ..., then $1$ time."
+                ],
+                "ordered": false
+              }
+            ]
+          }
+        ],
+        "firstBeat": 7790,
+        "total": 51358,
+        "fixes": 0,
+        "checked": true,
+        "equations": 9,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": {
+          "input": null,
+          "shown": 0,
+          "wrong": 0
+        }
+      },
+      "with": {
+        "beats": [
+          {
+            "say": "Let us formalize the logic. We use two nested loops: the outer loop tracks how many elements are in their final position, while the inner loop performs adjacent comparisons. If the element on the left is greater than the one on the right, we swap them to push the larger value forward.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "Bubble Sort Algorithm: Step-by-Step"
+              },
+              {
+                "type": "text",
+                "text": "**Pseudocode**",
+                "tone": "normal"
+              },
+              {
+                "type": "math",
+                "latex": "\\text{for } i = 0 \\text{ to } n-1:\\\\ \\quad \\text{for } j = 0 \\text{ to } n-i-2:\\\\ \\qquad \\text{if } A[j] > A[j+1]:\\\\ \\qquad \\quad \\text{swap}(A[j], A[j+1])",
+                "boxed": true
+              }
+            ]
+          },
+          {
+            "say": "Think of the inner loop as a single pass. If we have the array three, one, two, we compare three and one, swap them, then compare three and two and swap again. Now, the largest element, three, has bubbled up to the very end of the array.",
+            "draw": [
+              {
+                "type": "figure",
+                "height": 40,
+                "caption": "Single Pass: [3, 1, 2] -> [1, 2, 3]",
+                "shapes": [
+                  {
+                    "shape": "rect",
+                    "x": 10,
+                    "y": 10,
+                    "w": 15,
+                    "h": 15,
+                    "label": "3"
+                  },
+                  {
+                    "shape": "rect",
+                    "x": 30,
+                    "y": 10,
+                    "w": 15,
+                    "h": 15,
+                    "label": "1"
+                  },
+                  {
+                    "shape": "rect",
+                    "x": 50,
+                    "y": 10,
+                    "w": 15,
+                    "h": 15,
+                    "label": "2"
+                  },
+                  {
+                    "shape": "text",
+                    "x": 40,
+                    "y": 35,
+                    "text": "Swap 3 and 1"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "How many comparisons do we perform in total? In the worst case, we do roughly n squared over two comparisons. This gives us a time complexity of O of n squared. Can you see why the best case, where the array is already sorted, is just O of n?",
+            "draw": [
+              {
+                "type": "bullets",
+                "items": [
+                  "Worst Case: O(n^2) - nested loops",
+                  "Average Case: O(n^2)",
+                  "Best Case: O(n) - with early exit flag"
+                ],
+                "ordered": false
+              }
+            ]
+          },
+          {
+            "say": "The best case happens if we add a flag to track if any swaps occurred. If a full pass completes with zero swaps, the array is already sorted, so we break early! This optimization is why Bubble Sort is not just a toy example, but a useful tool for nearly sorted data.",
+            "draw": [
+              {
+                "type": "text",
+                "text": "**Optimization Tip**: Use a boolean flag 'swapped' to stop early if no swaps occur in a pass.",
+                "tone": "tip"
+              }
+            ]
+          }
+        ],
+        "firstBeat": 4580,
+        "total": 37649,
+        "fixes": 0,
+        "checked": true,
+        "equations": 1,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": {
+          "input": null,
+          "shown": 0,
+          "wrong": 0
+        }
+      }
+    },
+    {
+      "topic": "Ohm's law and series and parallel resistors",
+      "part": "Strategic Problem Solving & Common Traps",
+      "without": {
+        "beats": [
+          {
+            "say": "Now, let's tackle the ladder circuit. The secret is the node method: label every junction where current splits or joins to instantly see which resistors are truly in parallel.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "Strategic Problem Solving & Common Traps"
+              },
+              {
+                "type": "figure",
+                "height": 50,
+                "caption": "Node labelling for parallel identification",
+                "shapes": [
+                  {
+                    "shape": "line",
+                    "x1": 20,
+                    "y1": 20,
+                    "x2": 80,
+                    "y2": 20
+                  },
+                  {
+                    "shape": "line",
+                    "x1": 20,
+                    "y1": 40,
+                    "x2": 80,
+                    "y2": 40
+                  },
+                  {
+                    "shape": "rect",
+                    "x": 30,
+                    "y": 15,
+                    "w": 10,
+                    "h": 10,
+                    "label": "R1"
+                  },
+                  {
+                    "shape": "rect",
+                    "x": 60,
+                    "y": 15,
+                    "w": 10,
+                    "h": 10,
+                    "label": "R2"
+                  },
+                  {
+                    "shape": "text",
+                    "x": 20,
+                    "y": 15,
+                    "text": "Node A"
+                  },
+                  {
+                    "shape": "text",
+                    "x": 80,
+                    "y": 15,
+                    "text": "Node B"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "In this ladder, we start from the end furthest from the source. Notice how the last two resistors are in series, and then that combination is in parallel with the next branch.",
+            "draw": [
+              {
+                "type": "steps",
+                "lines": [
+                  {
+                    "latex": "R_{eq} = R_n + R_{n+1}",
+                    "note": "Series at the tail"
+                  },
+                  {
+                    "latex": "\\frac{1}{R_p} = \\frac{1}{R_x} + \\frac{1}{R_y}",
+                    "note": "Parallel reduction"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "The biggest trap? Adding resistors in parallel like they are in series. Always remember: parallel resistors decrease the total resistance, so your answer must be smaller than the smallest resistor.",
+            "draw": [
+              {
+                "type": "text",
+                "text": "**Common Trap Alert!** Never do $R_{eq} = R_1 + R_2$ for parallel branches. Always use the reciprocal formula.",
+                "tone": "important"
+              }
+            ]
+          },
+          {
+            "say": "Let's summarize our toolbox. We have Ohm's Law for individual components, and the series and parallel rules for simplifying complex networks step-by-step.",
+            "draw": [
+              {
+                "type": "bullets",
+                "items": [
+                  "Ohm's Law: $V = IR$",
+                  "Series: $R_{eq} = \\sum R_i$",
+                  "Parallel: $1/R_{eq} = \\sum 1/R_i$",
+                  "Node method: Label junctions to verify connections"
+                ]
+              }
+            ]
+          },
+          {
+            "say": "You've mastered the basics! Here is a challenge: what happens to the total current if you add another parallel branch to a circuit? Think about how the equivalent resistance changes.",
+            "draw": [
+              {
+                "type": "text",
+                "text": "Think: If $R_{eq}$ decreases, what does $I = V/R_{eq}$ do?",
+                "tone": "normal"
+              }
+            ]
+          }
+        ],
+        "firstBeat": 13301,
+        "total": 21135,
+        "fixes": 0,
+        "checked": true,
+        "equations": 7,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": null
+      },
+      "with": {
+        "beats": [
+          {
+            "say": "Welcome to our final section, where we conquer complex resistor networks using the powerful node method. When circuits look like tangled ladders, standard series and parallel formulas fail unless we first identify true node connections.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "Strategic Problem Solving & Common Traps"
+              }
+            ]
+          },
+          {
+            "say": "Let us master the node method, our ultimate weapon for tricky circuits. Step one: label every distinct junction where three or more wires meet with a unique letter or number.",
+            "draw": [
+              {
+                "type": "bullets",
+                "items": [
+                  "Step 1: Label all junction nodes",
+                  "Step 2: Trace wire paths with zero resistance",
+                  "Step 3: Identify components between same node pairs"
+                ],
+                "ordered": true
+              },
+              {
+                "type": "text",
+                "text": "A node is an equipotential region!",
+                "tone": "tip"
+              }
+            ]
+          },
+          {
+            "say": "Consider this classic trap: students often add resistors directly when lines cross visually, forgetting to check if they share the exact same two nodes. Let us work through a ladder network step by step to see how node labelling saves us.",
+            "draw": [
+              {
+                "type": "figure",
+                "height": 60,
+                "caption": "A ladder circuit trap",
+                "shapes": [
+                  {
+                    "shape": "line",
+                    "x1": 10,
+                    "y1": 30,
+                    "x2": 90,
+                    "y2": 30
+                  },
+                  {
+                    "shape": "line",
+                    "x1": 10,
+                    "y1": 50,
+                    "x2": 90,
+                    "y2": 50
+                  },
+                  {
+                    "shape": "rect",
+                    "x": 25,
+                    "y": 22,
+                    "w": 15,
+                    "h": 16,
+                    "label": "R1"
+                  },
+                  {
+                    "shape": "rect",
+                    "x": 55,
+                    "y": 22,
+                    "w": 15,
+                    "h": 16,
+                    "label": "R3"
+                  },
+                  {
+                    "shape": "line",
+                    "x1": 45,
+                    "y1": 30,
+                    "x2": 45,
+                    "y2": 50
+                  },
+                  {
+                    "shape": "rect",
+                    "x": 37,
+                    "y": 34,
+                    "w": 16,
+                    "h": 12,
+                    "label": "R2"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "Notice how resistor two connects between the bottom rail and the midpoint node. That makes R one and R two in series? Absolutely not, R two is in parallel with the combination ahead, so always re-draw your circuit using the node map before calculating equivalent resistance.",
+            "draw": [
+              {
+                "type": "math",
+                "latex": "R_{eq} = R_1 + \\left( \\frac{R_2 R_3}{R_2 + R_3} \\right)",
+                "label": "Correct Ladder Reduction",
+                "boxed": true
+              }
+            ]
+          },
+          {
+            "say": "Here is your quick recap: V equals I R is our linear bedrock, series adds resistances directly, and parallel adds reciprocals. Think about this: what happens to total power dissipated if you cut one resistor in a parallel branch? See you next time!",
+            "draw": [
+              {
+                "type": "bullets",
+                "items": [
+                  "$V = I R$ (linear for ohmic devices)",
+                  "Series: $R_{eq} = \\sum R_i$",
+                  "Parallel: $\\frac{1}{R_{eq}} = \\sum \\frac{1}{R_i}$",
+                  "Node method defeats complex traps"
+                ],
+                "ordered": false
+              }
+            ]
+          }
+        ],
+        "firstBeat": 19553,
+        "total": 28847,
+        "fixes": 0,
+        "checked": true,
+        "equations": 4,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": null
+      }
+    },
+    {
+      "topic": "Insertion sort",
+      "part": "Algorithm Mechanics and Complexity Analysis",
+      "without": {
+        "beats": [
+          {
+            "say": "Let's formalize what we just saw. We maintain a sorted subarray on the left, and for each new element, we slide it backward until it finds its home.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "Algorithm Mechanics and Complexity Analysis"
+              },
+              {
+                "type": "steps",
+                "lines": [
+                  {
+                    "latex": "for i = 1 to n-1:",
+                    "note": "Pick element"
+                  },
+                  {
+                    "latex": "key = A[i]",
+                    "note": "Store value"
+                  },
+                  {
+                    "latex": "j = i - 1",
+                    "note": "Start comparing"
+                  },
+                  {
+                    "latex": "while j >= 0 and A[j] > key:",
+                    "note": "Shift elements"
+                  },
+                  {
+                    "latex": "A[j+1] = A[j]",
+                    "note": "Move right"
+                  },
+                  {
+                    "latex": "j = j - 1",
+                    "note": "Step back"
+                  },
+                  {
+                    "latex": "A[j+1] = key",
+                    "note": "Place key"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "The inner while loop is the engine here. If the array is already sorted, the condition fails immediately, giving us our best-case scenario.",
+            "draw": [
+              {
+                "type": "text",
+                "text": "Best Case: $O(n)$",
+                "tone": "important"
+              },
+              {
+                "type": "math",
+                "latex": "T(n) = n - 1",
+                "boxed": true
+              }
+            ]
+          },
+          {
+            "say": "But what if the array is in reverse order? Every single element must be compared and shifted all the way to the front, creating a quadratic mess.",
+            "draw": [
+              {
+                "type": "text",
+                "text": "Worst Case: $O(n^2)$",
+                "tone": "important"
+              },
+              {
+                "type": "math",
+                "latex": "T(n) = \\sum_{i=1}^{n-1} i = \\frac{n(n-1)}{2}",
+                "boxed": true
+              }
+            ]
+          },
+          {
+            "say": "Think about this: if we have ten elements, the best case takes nine comparisons, but the worst case takes forty-five. Can you see why the number of shifts is the real culprit for the performance hit?",
+            "draw": [
+              {
+                "type": "table",
+                "headers": [
+                  "Case",
+                  "Complexity"
+                ],
+                "rows": [
+                  [
+                    "Best (Sorted)",
+                    "O(n)"
+                  ],
+                  [
+                    "Worst (Reverse)",
+                    "O(n^2)"
+                  ],
+                  [
+                    "Average",
+                    "O(n^2)"
+                  ]
+                ]
+              }
+            ]
+          }
+        ],
+        "firstBeat": 5722,
+        "total": 97128,
+        "fixes": 1,
+        "checked": true,
+        "equations": 5,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": {
+          "input": null,
+          "shown": 0,
+          "wrong": 0
+        }
+      },
+      "with": {
+        "beats": [
+          {
+            "say": "Let us formalize the logic we just saw. We maintain a sorted subarray on the left, and for each new element, we slide it backward until it finds its home.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "Algorithm Mechanics and Complexity Analysis"
+              },
+              {
+                "type": "steps",
+                "lines": [
+                  {
+                    "latex": "for \\ i = 1 \\ to \\ n-1:",
+                    "note": "Iterate through unsorted part"
+                  },
+                  {
+                    "latex": "\\quad key = A[i]",
+                    "note": "Pick current element"
+                  },
+                  {
+                    "latex": "\\quad j = i - 1",
+                    "note": "Start comparing leftward"
+                  },
+                  {
+                    "latex": "\\quad while \\ j >= 0 \\ and \\ A[j] > key:",
+                    "note": "Shift larger elements right"
+                  },
+                  {
+                    "latex": "\\quad \\quad A[j+1] = A[j]; \\ j = j - 1"
+                  },
+                  {
+                    "latex": "\\quad A[j+1] = key",
+                    "note": "Insert key into place"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "This nested loop structure is the heart of the algorithm. The outer loop runs n minus one times, but how many times does the inner loop run?",
+            "draw": [
+              {
+                "type": "text",
+                "text": "**Outer Loop**: n-1 iterations",
+                "tone": "normal"
+              },
+              {
+                "type": "text",
+                "text": "**Inner Loop**: Depends on data order",
+                "tone": "important"
+              }
+            ]
+          },
+          {
+            "say": "In the best case, the array is already sorted. The inner loop condition fails immediately, so we only perform n minus one comparisons, leading to linear time complexity.",
+            "draw": [
+              {
+                "type": "math",
+                "latex": "T(n) = O(n)",
+                "label": "Best Case: Sorted",
+                "boxed": true
+              }
+            ]
+          },
+          {
+            "say": "But consider the worst case, where the array is in reverse order. Every single element must be compared and shifted across the entire sorted portion, resulting in a quadratic number of operations.",
+            "draw": [
+              {
+                "type": "math",
+                "latex": "T(n) = \\sum_{i=1}^{n-1} i = \\frac{n(n-1)}{2} \\approx O(n^2)",
+                "label": "Worst Case: Reverse Sorted",
+                "boxed": true
+              }
+            ]
+          },
+          {
+            "say": "Think about this: if you have a list of ten items, the worst case takes roughly fifty operations, while the best case takes only nine. Does that make sense to you?",
+            "draw": [
+              {
+                "type": "table",
+                "headers": [
+                  "Case",
+                  "Complexity"
+                ],
+                "rows": [
+                  [
+                    "Best Case",
+                    "O(n)"
+                  ],
+                  [
+                    "Worst Case",
+                    "O(n^2)"
+                  ],
+                  [
+                    "Average Case",
+                    "O(n^2)"
+                  ]
+                ]
+              }
+            ]
+          }
+        ],
+        "firstBeat": 6340,
+        "total": 55349,
+        "fixes": 0,
+        "checked": true,
+        "equations": 3,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": {
+          "input": null,
+          "shown": 0,
+          "wrong": 0
+        }
+      }
+    },
+    {
+      "topic": "Compound interest",
+      "part": "Unlocking the Secret Formula",
+      "without": {
+        "beats": [
+          {
+            "say": "Let us unlock the secret formula behind this magic! Imagine you invest a starting money, called the Principal, at a certain yearly interest rate.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "Unlocking the Secret Formula"
+              }
+            ]
+          },
+          {
+            "say": "In simple interest, you only earn on the start. But here, the interest earned in year one gets added to your principal to earn even more in year two!",
+            "draw": [
+              {
+                "type": "flowchart",
+                "direction": "LR",
+                "nodes": [
+                  {
+                    "id": "p",
+                    "label": "Principal (P)"
+                  },
+                  {
+                    "id": "y1",
+                    "label": "Year 1 Amount"
+                  },
+                  {
+                    "id": "y2",
+                    "label": "Year 2 Principal"
+                  }
+                ],
+                "edges": [
+                  {
+                    "from": "p",
+                    "to": "y1",
+                    "label": "+ Interest"
+                  },
+                  {
+                    "from": "y1",
+                    "to": "y2",
+                    "label": "Becomes new P"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "Let us do the math for Year 1. The total amount is your principal plus the interest, which gives us P times one plus R over one hundred.",
+            "draw": [
+              {
+                "type": "steps",
+                "lines": [
+                  {
+                    "latex": "A_1 = P + \\frac{P \\times R}{100}",
+                    "note": "Principal + Year 1 Interest"
+                  },
+                  {
+                    "latex": "A_1 = P(1 + \\frac{R}{100})",
+                    "note": "Taking P common"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "For Year 2, this whole amount becomes our new principal! We multiply it by one plus R over one hundred all over again, squaring our bracket.",
+            "draw": [
+              {
+                "type": "steps",
+                "lines": [
+                  {
+                    "latex": "A_2 = A_1(1 + \\frac{R}{100})",
+                    "note": "Year 2 starting with A_1"
+                  },
+                  {
+                    "latex": "A_2 = P(1 + \\frac{R}{100})(1 + \\frac{R}{100})",
+                    "note": "Substitute A_1"
+                  },
+                  {
+                    "latex": "A_2 = P(1 + \\frac{R}{100})^2",
+                    "note": "Product rule for exponents"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "Following this exact pattern for t years, we get our master formula for the final amount! Notice how the time t sits right up there in the power.",
+            "draw": [
+              {
+                "type": "math",
+                "latex": "A = P\\left(1 + \\frac{R}{100}\\right)^t",
+                "label": "Compound Amount Formula",
+                "boxed": true
+              }
+            ]
+          }
+        ],
+        "firstBeat": 24097,
+        "total": 32256,
+        "fixes": 0,
+        "checked": true,
+        "equations": 3,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": null
+      },
+      "with": {
+        "beats": [
+          {
+            "say": "To find the secret, let's look at how your money grows year by year. In simple interest, you only earn on the start amount, but here, the interest you earn today starts earning its own interest tomorrow!",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "Unlocking the Secret Formula"
+              }
+            ]
+          },
+          {
+            "say": "Think of it as a loop. You start with a principal, P. After one year, you add interest, which is P times R over 100. If we factor out the P, we get P times the quantity one plus R over 100.",
+            "draw": [
+              {
+                "type": "flowchart",
+                "direction": "LR",
+                "nodes": [
+                  {
+                    "id": "1",
+                    "label": "Start: P",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "2",
+                    "label": "Add Interest",
+                    "shape": "diamond"
+                  },
+                  {
+                    "id": "3",
+                    "label": "Year 1: P(1+R/100)",
+                    "shape": "box"
+                  }
+                ],
+                "edges": [
+                  {
+                    "from": "1",
+                    "to": "2"
+                  },
+                  {
+                    "from": "2",
+                    "to": "3"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "Now, here is the magic! That total amount from Year 1 becomes the new principal for Year 2. We multiply it by that same growth factor, one plus R over 100, all over again.",
+            "draw": [
+              {
+                "type": "flowchart",
+                "direction": "TB",
+                "nodes": [
+                  {
+                    "id": "3",
+                    "label": "Year 1: P(1+R/100)",
+                    "shape": "box"
+                  },
+                  {
+                    "id": "4",
+                    "label": "Year 2: P(1+R/100) * (1+R/100)",
+                    "shape": "box"
+                  }
+                ],
+                "edges": [
+                  {
+                    "from": "3",
+                    "to": "4",
+                    "label": "Multiply by (1+R/100)"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "If we keep doing this for t years, we just keep multiplying by that same factor t times. In math, multiplying the same thing over and over is just an exponent!",
+            "draw": [
+              {
+                "type": "math",
+                "latex": "A = P(1 + \\frac{R}{100})^t",
+                "label": "Compound Interest Formula",
+                "boxed": true
+              }
+            ]
+          },
+          {
+            "say": "So, A is the final amount, P is your starting money, R is the rate percent, and t is the time in years. Can you see how the exponent t represents exactly how many times the money has grown?",
+            "draw": [
+              {
+                "type": "bullets",
+                "items": [
+                  "A = Final Amount",
+                  "P = Principal",
+                  "R = Rate %",
+                  "t = Time in years"
+                ]
+              }
+            ]
+          }
+        ],
+        "firstBeat": 4213,
+        "total": 11332,
+        "fixes": 0,
+        "checked": true,
+        "equations": 1,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": null
+      }
+    },
+    {
+      "topic": "Quick sort",
+      "part": "Worked Example and Common Pitfalls",
+      "without": {
+        "beats": [
+          {
+            "say": "Let us dive into a concrete example to see Lomuto partitioning in action. We want to sort the array ten, eighty, thirty, ninety, forty, fifty, seventy, using the last element, seventy, as our pivot.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "Worked Example: Partitioning"
+              },
+              {
+                "type": "array",
+                "values": [
+                  "10",
+                  "80",
+                  "30",
+                  "90",
+                  "40",
+                  "50",
+                  "70"
+                ],
+                "label": "A",
+                "pointers": [
+                  {
+                    "index": 6,
+                    "label": "pivot"
+                  }
+                ],
+                "caption": "Initial Array (Pivot = 70)"
+              }
+            ]
+          },
+          {
+            "say": "We maintain two pointers: i starts before the array at minus one, and j scans from left to right. When element j is less than or equal to the pivot, we increment i and swap elements at i and j.",
+            "draw": [
+              {
+                "type": "steps",
+                "lines": [
+                  {
+                    "latex": "j = 0 \\dots high-1",
+                    "note": "Scan array"
+                  },
+                  {
+                    "latex": "A[j] \\le pivot \\implies i++, swap(A[i], A[j])",
+                    "note": "Partition rule"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "Let us trace the first few steps. At index zero, ten is less than seventy, so i moves to zero, swapping ten with itself. Next, eighty is greater than seventy, so i stays put and j advances.",
+            "draw": [
+              {
+                "type": "array",
+                "values": [
+                  "10",
+                  "80",
+                  "30",
+                  "90",
+                  "40",
+                  "50",
+                  "70"
+                ],
+                "label": "Step 1",
+                "pointers": [
+                  {
+                    "index": 0,
+                    "label": "i"
+                  },
+                  {
+                    "index": 1,
+                    "label": "j"
+                  }
+                ],
+                "highlight": [
+                  0
+                ],
+                "caption": "A[0] = 10 <= 70: increment i, swap"
+              }
+            ]
+          },
+          {
+            "say": "After scanning all elements, we place our pivot in its final sorted position by swapping it with the element at i plus one. Now, the array is [10, 30, 40, 50, 70, 90, 80], where seventy sits at index four.",
+            "draw": [
+              {
+                "type": "array",
+                "values": [
+                  "10",
+                  "30",
+                  "40",
+                  "50",
+                  "70",
+                  "90",
+                  "80"
+                ],
+                "label": "Final Partit",
+                "pointers": [
+                  {
+                    "index": 4,
+                    "label": "pivot pos"
+                  }
+                ],
+                "highlight": [
+                  4
+                ],
+                "caption": "Pivot 70 is now correctly placed!"
+              }
+            ]
+          },
+          {
+            "say": "To wrap up, remember that Quicksort achieves average time O of n log n by recursively partitioning around a pivot. Watch out for worst-case O of n squared time when choosing already sorted pivots! Before you go, think about this: how can randomized pivot selection help us avoid the dreaded worst-case performance entirely?",
+            "draw": [
+              {
+                "type": "bullets",
+                "items": [
+                  "Best/Average Case: O(n log n)",
+                  "Worst Case: O(n^2) with bad pivots",
+                  "Fix: Randomized pivot selection"
+                ],
+                "ordered": false
+              }
+            ]
+          }
+        ],
+        "firstBeat": 12323,
+        "total": 21153,
+        "fixes": 1,
+        "checked": true,
+        "equations": 1,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": {
+          "input": [
+            10,
+            80,
+            30,
+            90,
+            40,
+            50,
+            70
+          ],
+          "shown": 3,
+          "wrong": 0,
+          "examples": []
+        }
+      },
+      "with": {
+        "beats": [
+          {
+            "say": "Let us apply the Lomuto partition scheme to our array. We pick the last element as our pivot, then use two pointers to swap elements smaller than the pivot to the front.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "Worked Example: Partitioning [10, 80, 30, 90, 40, 50, 70]"
+              },
+              {
+                "type": "array",
+                "values": [
+                  "10",
+                  "80",
+                  "30",
+                  "90",
+                  "40",
+                  "50",
+                  "70"
+                ],
+                "label": "A",
+                "pointers": [
+                  {
+                    "index": 0,
+                    "label": "i"
+                  },
+                  {
+                    "index": 0,
+                    "label": "j"
+                  }
+                ],
+                "caption": "Pivot is 70"
+              }
+            ]
+          },
+          {
+            "say": "Watch as the j pointer scans. When it finds 10, 30, 40, or 50, it swaps them to the left of the wall. Finally, we swap the pivot into its correct position at index 4.",
+            "draw": [
+              {
+                "type": "array",
+                "values": [
+                  "10",
+                  "30",
+                  "40",
+                  "50",
+                  "70",
+                  "90",
+                  "80"
+                ],
+                "label": "A",
+                "pointers": [
+                  {
+                    "index": 3,
+                    "label": "i"
+                  },
+                  {
+                    "index": 6,
+                    "label": "j"
+                  }
+                ],
+                "caption": "After final swap, pivot 70 is at index 4"
+              }
+            ]
+          },
+          {
+            "say": "Now the pivot 70 is in its final sorted position. We recursively repeat this process for the left sub-array and the right sub-array until the entire list is ordered.",
+            "draw": [
+              {
+                "type": "text",
+                "text": "**Key Pitfall:** Choosing the first or last element as pivot on already sorted data leads to $O(n^2)$ time. Always shuffle or pick a random pivot!",
+                "tone": "tip"
+              }
+            ]
+          },
+          {
+            "say": "To wrap up, remember that Quicksort is an in-place algorithm with excellent cache locality. It is the workhorse of sorting in most standard libraries.",
+            "draw": [
+              {
+                "type": "bullets",
+                "items": [
+                  "Divide and Conquer strategy",
+                  "Lomuto or Hoare partitioning",
+                  "Average case O(n log n)",
+                  "Worst case O(n squared)"
+                ],
+                "ordered": false
+              }
+            ]
+          },
+          {
+            "say": "Before you go, think about this: if we used a median-of-three pivot selection strategy instead of just the last element, how would that change the worst-case scenario for sorted input?",
+            "draw": [
+              {
+                "type": "text",
+                "text": "Think: Can we avoid the O(n squared) trap?",
+                "tone": "important"
+              }
+            ]
+          }
+        ],
+        "firstBeat": 5187,
+        "total": 12198,
+        "fixes": 1,
+        "checked": true,
+        "equations": 1,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": {
+          "input": [
+            10,
+            80,
+            30,
+            90,
+            40,
+            50,
+            70
+          ],
+          "shown": 2,
+          "wrong": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "topic": "Newton's second law with friction",
+      "part": "Problem-Solving & Common Traps",
+      "without": {
+        "beats": [
+          {
+            "say": "Now let's tackle the classic inclined plane problem. Imagine a block of mass two kilograms on a rough incline of thirty degrees, with a coefficient of kinetic friction of zero point two. We resolve gravity into components perpendicular and parallel to the surface.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "Problem-Solving & Common Traps"
+              },
+              {
+                "type": "figure",
+                "height": 60,
+                "caption": "Block on an incline with components",
+                "shapes": [
+                  {
+                    "shape": "line",
+                    "x1": 10,
+                    "y1": 50,
+                    "x2": 90,
+                    "y2": 30,
+                    "color": "white"
+                  },
+                  {
+                    "shape": "polygon",
+                    "points": [
+                      [
+                        10,
+                        50
+                      ],
+                      [
+                        90,
+                        50
+                      ],
+                      [
+                        90,
+                        30
+                      ]
+                    ],
+                    "color": "blue"
+                  },
+                  {
+                    "shape": "rect",
+                    "x": 40,
+                    "y": 32,
+                    "w": 10,
+                    "h": 7,
+                    "color": "red"
+                  },
+                  {
+                    "shape": "arc",
+                    "cx": 15,
+                    "cy": 50,
+                    "r": 15,
+                    "start": 0,
+                    "end": 330,
+                    "color": "yellow"
+                  },
+                  {
+                    "shape": "text",
+                    "x": 25,
+                    "y": 45,
+                    "text": "30 degrees"
+                  },
+                  {
+                    "shape": "line",
+                    "x1": 45,
+                    "y1": 35,
+                    "x2": 45,
+                    "y2": 15,
+                    "color": "green"
+                  },
+                  {
+                    "shape": "text",
+                    "x": 47,
+                    "y": 18,
+                    "text": "mg"
+                  },
+                  {
+                    "shape": "line",
+                    "x1": 45,
+                    "y1": 35,
+                    "x2": 45,
+                    "y2": 25,
+                    "color": "orange"
+                  },
+                  {
+                    "shape": "text",
+                    "x": 47,
+                    "y": 28,
+                    "text": "mg cos θ"
+                  },
+                  {
+                    "shape": "line",
+                    "x1": 45,
+                    "y1": 35,
+                    "x2": 30,
+                    "y2": 39,
+                    "color": "orange"
+                  },
+                  {
+                    "shape": "text",
+                    "x": 25,
+                    "y": 38,
+                    "text": "mg sin θ"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "First, we resolve gravity into two components: mg sine theta down the slope and mg cosine theta perpendicular to it. The normal force must balance that perpendicular component, so N equals mg cosine theta.",
+            "draw": [
+              {
+                "type": "math",
+                "latex": "N = mg \\cos \\theta",
+                "label": "Normal Force",
+                "boxed": true
+              },
+              {
+                "type": "math",
+                "latex": "F_{net} = mg \\sin \\theta - \\mu_k N = ma",
+                "label": "Equation of Motion",
+                "boxed": true
+              }
+            ]
+          },
+          {
+            "say": "Using our values, mg sine thirty is ten Newtons, and friction is point two times twenty times cosine thirty, roughly three point four six Newtons. Subtracting these gives a net force of six point five four Newtons, so acceleration is three point two seven meters per second squared.",
+            "draw": [
+              {
+                "type": "steps",
+                "lines": [
+                  {
+                    "latex": "F_{net} = 10 - 3.46 = 6.54 \\text{ N}",
+                    "note": "Net force calculation"
+                  },
+                  {
+                    "latex": "a = \\frac{6.54}{2} = 3.27 \\text{ m/s}^2",
+                    "note": "Resulting acceleration"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "Watch out for the biggest trap: students often forget to check if the block even moves! If the applied force is less than the maximum static friction, the acceleration is zero, not negative.",
+            "draw": [
+              {
+                "type": "bullets",
+                "items": [
+                  "Check if applied force > static friction limit",
+                  "Always resolve mg along the incline",
+                  "Normal force is not always mg"
+                ],
+                "ordered": false
+              }
+            ]
+          },
+          {
+            "say": "Always verify if the object is sliding before using the kinetic friction formula. For your next challenge, what happens if the incline angle is very small, say five degrees? Think about that!",
+            "draw": [
+              {
+                "type": "math",
+                "latex": "a = g(\\sin \\theta - \\mu_k \\cos \\theta)",
+                "label": "General Acceleration Formula",
+                "boxed": true
+              }
+            ]
+          }
+        ],
+        "firstBeat": 3762,
+        "total": 12221,
+        "fixes": 1,
+        "checked": true,
+        "equations": 4,
+        "equationErrors": 1,
+        "mathExamples": [
+          "\\frac{6.54}{2} = 3.27 \\text{ m/s}^2 is wrong: the left side is 3.27, not 10.6929"
+        ],
+        "trace": null
+      },
+      "with": {
+        "beats": [
+          {
+            "say": "Let us apply everything we have learned to an inclined plane. Imagine a ten kilogram block on a rough incline at thirty degrees, with a coefficient of kinetic friction of zero point two.",
+            "draw": [
+              {
+                "type": "heading",
+                "text": "Problem-Solving & Common Traps"
+              },
+              {
+                "type": "figure",
+                "height": 80,
+                "caption": "Block on incline",
+                "shapes": [
+                  {
+                    "shape": "polygon",
+                    "points": [
+                      [
+                        10,
+                        70
+                      ],
+                      [
+                        90,
+                        70
+                      ],
+                      [
+                        90,
+                        30
+                      ]
+                    ],
+                    "label": "Incline"
+                  },
+                  {
+                    "shape": "rect",
+                    "x": 45,
+                    "y": 20,
+                    "w": 15,
+                    "h": 10,
+                    "label": "m=10kg"
+                  },
+                  {
+                    "shape": "line",
+                    "x1": 52,
+                    "y1": 25,
+                    "x2": 52,
+                    "y2": 50,
+                    "label": "mg"
+                  },
+                  {
+                    "shape": "arc",
+                    "cx": 10,
+                    "cy": 70,
+                    "r": 20,
+                    "start": 0,
+                    "end": 30,
+                    "label": "30°"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "First, we resolve gravity into two components. The component perpendicular to the surface is mg cos theta, and the component pulling it down the slope is mg sin theta.",
+            "draw": [
+              {
+                "type": "steps",
+                "lines": [
+                  {
+                    "latex": "N = mg \\cos(\\theta)",
+                    "note": "Perpendicular equilibrium"
+                  },
+                  {
+                    "latex": "f_k = \\mu_k N",
+                    "note": "Kinetic friction law"
+                  },
+                  {
+                    "latex": "F_{net} = mg \\sin(\\theta) - f_k = ma",
+                    "note": "Newton's Second Law"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "Now, let us calculate the acceleration. With mass ten kilograms, gravity ten, and angle thirty degrees, the normal force is eighty-six point six Newtons, and friction is seventeen point three Newtons.",
+            "draw": [
+              {
+                "type": "steps",
+                "lines": [
+                  {
+                    "latex": "N = 10 \\times 10 \\times \\cos(30^\\circ) \\approx 86.6 \\text{ N}",
+                    "note": "Normal force"
+                  },
+                  {
+                    "latex": "f_k = 0.2 \\times 86.6 \\approx 17.3 \\text{ N}",
+                    "note": "Friction force"
+                  },
+                  {
+                    "latex": "10 \\times 10 \\times \\sin(30^\\circ) - 17.3 = 10a",
+                    "note": "Equation of motion"
+                  },
+                  {
+                    "latex": "a = 3.27 \\text{ m/s}^2",
+                    "note": "Final acceleration"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "say": "Watch out for the classic trap: students often use the full weight for friction, but remember, friction depends only on the normal force! Always draw your FBD first to avoid this mistake.",
+            "draw": [
+              {
+                "type": "bullets",
+                "items": [
+                  "Always resolve gravity components first",
+                  "Friction depends on Normal force, not mg",
+                  "Check if block actually moves: is mg sin theta > static friction?"
+                ]
+              }
+            ]
+          },
+          {
+            "say": "To wrap up, remember that friction is a reactive force. Before you leave, think about this: what happens to the acceleration if we pull the block up the incline instead of letting it slide down?",
+            "draw": [
+              {
+                "type": "math",
+                "latex": "\\sum F = ma",
+                "label": "The Golden Rule",
+                "boxed": true
+              }
+            ]
+          }
+        ],
+        "firstBeat": 4744,
+        "total": 17775,
+        "fixes": 0,
+        "checked": true,
+        "equations": 3,
+        "equationErrors": 0,
+        "mathExamples": [],
+        "trace": null
+      }
+    }
+  ],
+  "totals": {
+    "without": {
+      "equations": 33,
+      "equationErrors": 1,
+      "traceShown": 3,
+      "traceWrong": 0,
+      "fixes": 5,
+      "firstBeat": 11373
+    },
+    "with": {
+      "equations": 16,
+      "equationErrors": 0,
+      "traceShown": 2,
+      "traceWrong": 0,
+      "fixes": 1,
+      "firstBeat": 7331.25
+    }
+  }
+}

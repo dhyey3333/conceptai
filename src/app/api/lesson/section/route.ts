@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { streamBeats } from "@/lib/server/beats";
 import { verifyEnabled, writeThenCheck } from "@/lib/server/verify";
+import { workedExample } from "@/lib/server/helper";
 import { sectionPrompt } from "@/lib/server/prompts";
+import { budgetFor } from "@/lib/server/env";
 import { requireLlm, sourceBudget } from "@/lib/server/llm";
 import {
   DepthSchema,
@@ -29,7 +31,18 @@ const Body = z.object({
   sourceText: SourceSchema,
   tier: TierSchema,
   research: ResearchTextSchema,
+  /** false: skip the Python tools (worked-example traces, exact maths checks), e.g. to measure their effect. */
+  helper: z.boolean().optional(),
 });
+
+/**
+ * A real run of the algorithm this part teaches, from the Python helper: when
+ * its title or goal names one, or when it's a worked example in a lesson about one.
+ */
+async function workedExampleFor(topic: string, section: { title: string; goal: string }): Promise<string | undefined> {
+  const own = `${section.title}\n${section.goal}`;
+  return (await workedExample(own)) ?? (/example|trace|walk|in action|step|demo|illustrat/i.test(own) ? await workedExample(`${topic}\n${own}`) : undefined);
+}
 
 export async function POST(req: Request) {
   const limited = rateLimit(req, "section", 40);
@@ -38,13 +51,21 @@ export async function POST(req: Request) {
     const body = await readJson(req, Body, 1_000_000);
     requireLlm(body.tier);
     if (body.sectionIndex >= body.outline.sections.length) throw new RequestError("sectionIndex is out of range.");
-    const { system, user } = sectionPrompt({ ...body, sourceBudget: sourceBudget(body.tier, "part") });
     const section = body.outline.sections[body.sectionIndex];
+    const helper = body.helper !== false;
+    // The writer narrates the computed steps, and the fact-check holds the part to them.
+    const worked = helper ? await workedExampleFor(body.topic, section) : undefined;
+    // Built per model: a fallback with a small per-minute limit (or a local model) gets a shorter excerpt.
+    const sized = (budget: number) => {
+      const { system, user } = sectionPrompt({ ...body, sourceBudget: budget, worked });
+      return { system, messages: [{ role: "user" as const, content: user }] };
+    };
     const subject = {
       topic: body.topic,
       level: body.level,
       research: body.research,
       context: `Lesson: ${body.outline.title}. Part ${body.sectionIndex + 1}: "${section.title}". Goal: ${section.goal}`,
+      reference: worked,
     };
     // Beats go to the board as they are written (the lesson starts at once);
     // the fact-check runs straight after and sends corrections, which usually
@@ -55,9 +76,9 @@ export async function POST(req: Request) {
     const minEffort = verifyEnabled() ? undefined : "medium";
     return ndjson(req, (signal) =>
       writeThenCheck(
-        streamBeats({ system, messages: [{ role: "user", content: user }], maxTokens: 6000, tier: body.tier, minEffort, signal }, 12),
+        streamBeats({ ...sized(sourceBudget(body.tier, "part")), sizeFor: (cfg) => sized(budgetFor(cfg, "part")), maxTokens: 6000, tier: body.tier, minEffort, signal }, 12),
         subject,
-        { tier: body.tier, signal },
+        { tier: body.tier, signal, helper },
       ),
     );
   } catch (err) {

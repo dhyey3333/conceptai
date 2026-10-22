@@ -2,8 +2,8 @@ import { z } from "zod";
 import { cleanText } from "@/lib/board/schema";
 import { extractJsonObject } from "@/lib/stream/jsonObjects";
 import { chooseTier, escalateTier } from "@/lib/lesson/routing";
-import { llmConfig } from "@/lib/server/env";
-import { completeText, isRetriable, LlmError, sourceBudget } from "@/lib/server/llm";
+import { budgetFor } from "@/lib/server/env";
+import { activeConfig, completeText, isRetriable, LlmError, sourceBudget } from "@/lib/server/llm";
 import { planParts } from "@/lib/source/document";
 import { outlinePrompt } from "@/lib/server/prompts";
 import {
@@ -73,12 +73,16 @@ export async function POST(req: Request) {
   try {
     const body = await readJson(req, Body, 1_000_000);
     const tier = chooseTier(body.tierPref, body.level);
-    const { system, user } = outlinePrompt({ ...body, sourceBudget: sourceBudget(tier, "plan") });
+    // Built per model, so a smaller fallback gets a shorter excerpt of the material.
+    const sized = (budget: number) => {
+      const { system, user } = outlinePrompt({ ...body, sourceBudget: budget });
+      return { system, messages: [{ role: "user" as const, content: user }] };
+    };
     // One retry: small models occasionally return malformed JSON.
     for (let attempt = 0; attempt < 2; attempt++) {
       let text: string;
       try {
-        text = await completeText({ system, messages: [{ role: "user", content: user }], maxTokens: 2000, json: true, tier, signal: req.signal });
+        text = await completeText({ ...sized(sourceBudget(tier, "plan")), sizeFor: (cfg) => sized(budgetFor(cfg, "plan")), maxTokens: 2000, json: true, tier, signal: req.signal });
       } catch (err) {
         if (attempt === 0 && isRetriable(err)) continue;
         throw err;
@@ -96,7 +100,8 @@ export async function POST(req: Request) {
           outline: parsed.outline,
           difficulty: parsed.difficulty,
           tier: finalTier,
-          model: llmConfig(finalTier)?.model,
+          // The model that will answer now (one known to be used up for the day is skipped).
+          model: activeConfig(finalTier)?.model,
         });
       }
     }

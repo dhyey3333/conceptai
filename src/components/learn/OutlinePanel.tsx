@@ -68,6 +68,22 @@ export function OutlinePanel({ s, session }: { s: SessionState; session: LessonS
                         <CircleX size={13} /> {s.lesson.sections[sec.id].error ?? "Failed"}
                       </span>
                     )}
+                    {st === "ready" && s.lesson.sections[sec.id]?.partial && (
+                      <span className="mt-1.5 flex items-center gap-2 text-[12px] text-warn">
+                        Cut short before it was finished.
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            session.retrySection(i);
+                          }}
+                          className="rounded-md px-1.5 py-0.5 text-accent-strong hover:bg-white/10"
+                        >
+                          Rewrite
+                        </span>
+                      </span>
+                    )}
                   </span>
                   <span className="mt-1 shrink-0">
                     {st === "loading" && <Spinner size={14} />}
