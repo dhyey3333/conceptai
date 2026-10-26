@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { BookOpen, House, NotebookPen, Plus, Trash, X } from "lucide-react";
-import { fetchStatus, type ServerStatus } from "@/lib/api";
+import { fetchStatus, refreshStatus, type ServerStatus } from "@/lib/api";
 import { store } from "@/lib/store";
 import { useLists } from "@/lib/useLists";
 import { cn, modelLabel, timeAgo } from "@/lib/utils";
@@ -19,6 +19,13 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     void fetchStatus().then(setStatus);
     void store.backendName().then((n) => setStorage(n === "supabase" ? "Synced to Supabase" : "Saved in this browser"));
   }, []);
+  // The Python helper takes a few seconds to start with the app: ask again until it is up.
+  const pythonStarting = !!status?.python?.starting;
+  useEffect(() => {
+    if (!pythonStarting) return;
+    const t = setTimeout(() => void refreshStatus().then(setStatus), 4000);
+    return () => clearTimeout(t);
+  }, [status, pythonStarting]);
 
   const remove = async (kind: "lesson" | "note", id: string, title: string) => {
     if (!window.confirm(`Delete "${title}"? This can't be undone.`)) return;
@@ -109,9 +116,9 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           )}
         </div>
         {status?.llm.problem && <div className="text-danger">{status.llm.problem}</div>}
-        <div className="flex items-center gap-2" title="Exact maths checks (SymPy), real algorithm traces and OCR for scanned PDFs">
-          <span className={cn("h-2 w-2 rounded-full", status?.python?.up ? "bg-ok" : "bg-subtle")} />
-          Python tools: {status?.python?.up ? "on" : "off"}
+        <div className="flex items-center gap-2" title="Exact maths checks (SymPy), real algorithm traces, running the Python code lessons show, and OCR for scanned PDFs">
+          <span className={cn("h-2 w-2 rounded-full", status?.python?.up ? "bg-ok" : pythonStarting ? "animate-pulse bg-warn" : "bg-subtle")} />
+          Python tools: {status?.python?.up ? "on" : pythonStarting ? "starting…" : "off"}
         </div>
         <div className="flex items-center gap-2">
           <span className={cn("h-2 w-2 rounded-full", status?.tts.configured ? "bg-ok" : "bg-subtle")} />

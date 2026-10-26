@@ -20,6 +20,8 @@ const enabled = () => process.env.PY_HELPER?.trim().toLowerCase() !== "off";
 export const SECRET_ENV = /KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH|CREDENTIAL|COOKIE|^(LLM|GEMINI|GROQ|OPENAI|ANTHROPIC|SUPABASE|STT|TTS)_/i;
 
 let starting: Promise<boolean> | null = null;
+/** The last start gave up (no uv, say): the status panel stops trying; a lesson that needs the helper still retries. */
+let startFailed = false;
 let lastUp = 0;
 
 export async function helperUp(): Promise<boolean> {
@@ -32,6 +34,14 @@ export async function helperUp(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** For the status panel: running, being started (started now if it was down), or off (turned off, or uv missing). */
+export async function helperState(): Promise<"on" | "starting" | "off"> {
+  if (!enabled()) return "off";
+  if (await helperUp()) return "on";
+  if (!starting && !startFailed) void startHelper();
+  return starting ? "starting" : "off";
 }
 
 /** Start the helper if it isn't running. Resolves true once it answers. */
@@ -72,9 +82,14 @@ export function startHelper(): Promise<boolean> {
       }
     }
     return false;
-  })().finally(() => {
-    starting = null;
-  });
+  })()
+    .then((ok) => {
+      startFailed = !ok;
+      return ok;
+    })
+    .finally(() => {
+      starting = null;
+    });
   return starting;
 }
 

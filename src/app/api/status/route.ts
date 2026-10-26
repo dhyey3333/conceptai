@@ -1,6 +1,6 @@
 import { generateSequentially, llmConfig, providerChain, researchMode, sttConfig, supabaseConfigured, ttsConfig } from "@/lib/server/env";
 import { activeConfig, currentConfigProblem } from "@/lib/server/llm";
-import { helperUp } from "@/lib/server/helper";
+import { helperState } from "@/lib/server/helper";
 
 /** What's configured on the server. Names only, never keys. */
 export async function GET() {
@@ -27,6 +27,6 @@ export async function GET() {
     stt: { configured: !!sttConfig() },
     supabase: { configured: supabaseConfigured() },
     // Exact maths checks, algorithm traces and OCR (python/), when its helper is running.
-    python: { up: await helperUp() },
+    python: await helperState().then((state) => ({ up: state === "on", starting: state === "starting" })),
   });
 }

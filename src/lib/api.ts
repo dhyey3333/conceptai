@@ -85,7 +85,8 @@ export interface ServerStatus {
   tts: { configured: boolean; provider?: string };
   stt: { configured: boolean };
   supabase: { configured: boolean };
-  python?: { up: boolean };
+  /** The Python helper: running, or still starting (it takes a few seconds after the app starts). */
+  python?: { up: boolean; starting?: boolean };
 }
 
 let statusPromise: Promise<ServerStatus> | null = null;
@@ -94,4 +95,10 @@ export function fetchStatus(): Promise<ServerStatus> {
     .then((r) => r.json() as Promise<ServerStatus>)
     .catch(() => ({ llm: { configured: false }, tts: { configured: false }, stt: { configured: false }, supabase: { configured: false } }));
   return statusPromise;
+}
+
+/** Ask the server again (the cached status can be out of date, e.g. while the Python helper starts). */
+export function refreshStatus(): Promise<ServerStatus> {
+  statusPromise = null;
+  return fetchStatus();
 }
