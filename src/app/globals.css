@@ -281,6 +281,9 @@ body {
 .b-code-body {
   padding: 8px 0;
   font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+  /* Code exactly as typed: Cascadia Code would draw "<=" as "≤" and "!=" as "≠", which a learner might copy. */
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
   font-size: 19px;
   line-height: 1.5;
   overflow-x: auto;
@@ -333,6 +336,8 @@ body {
 .b-code-run pre {
   margin: 4px 0 0;
   font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
   font-size: 17px;
   line-height: 1.45;
   white-space: pre-wrap;
@@ -567,6 +572,8 @@ body {
   padding: 0.1em 0.35em;
   border-radius: 5px;
   font-size: 0.9em;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
 }
 .notes-doc pre {
   background: #f6f4ef;
