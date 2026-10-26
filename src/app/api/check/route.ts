@@ -2,7 +2,7 @@ import { z } from "zod";
 import { sanitizeBeat, type Beat } from "@/lib/board/schema";
 import { sanitizeQuiz } from "@/lib/quiz/schema";
 import { requireLlm } from "@/lib/server/llm";
-import { checkBeats, checkNotes, checkQuiz, verifyEnabled } from "@/lib/server/verify";
+import { checkBeatsAndCode, rerunCode, checkNotes, checkQuiz, verifyEnabled } from "@/lib/server/verify";
 import { errorResponse, LevelSchema, rateLimit, readJson, RequestError, ResearchTextSchema, TierSchema, TopicSchema } from "@/lib/server/http";
 
 const common = { topic: TopicSchema, level: LevelSchema, research: ResearchTextSchema, tier: TierSchema };
@@ -28,10 +28,16 @@ export async function POST(req: Request) {
     requireLlm(body.tier);
     const opts = { tier: body.tier, signal: req.signal };
     if (body.kind === "beats") {
-      const beats = body.beats.map((b) => sanitizeBeat(b)).filter((b): b is Beat => !!b);
+      const sent = body.beats.map((b) => sanitizeBeat(b)).filter((b): b is Beat => !!b);
       // Fix indices refer to the client's list, so every beat must survive validation.
-      if (beats.length !== body.beats.length) throw new RequestError("Some beats were not valid.");
-      return Response.json(await checkBeats({ topic: body.topic, level: body.level, research: body.research, context: body.context }, beats, opts));
+      if (sent.length !== body.beats.length) throw new RequestError("Some beats were not valid.");
+      // Run results saved in the browser are not taken on trust: the code is run again here,
+      // and beats whose fresh result differs go back with the corrections.
+      const beats = await rerunCode(sent);
+      const r = await checkBeatsAndCode({ topic: body.topic, level: body.level, research: body.research, context: body.context }, beats, opts);
+      const fixed = new Map(r.fixes.map((f) => [f.index, f.beat]));
+      beats.forEach((b, i) => !fixed.has(i) && JSON.stringify(b) !== JSON.stringify(sent[i]) && fixed.set(i, b));
+      return Response.json({ checked: r.checked, fixes: [...fixed].sort(([a], [b]) => a - b).map(([index, beat]) => ({ index, beat })) });
     }
     if (body.kind === "notes") {
       const subject = { topic: body.topic, level: body.level, research: body.research, context: "These are exam notes with model answers." };

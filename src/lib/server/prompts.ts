@@ -64,6 +64,7 @@ export const BOARD_SPEC = `WHITEBOARD ITEMS (the "draw" list). Only these types 
 - {"type":"tree","nodes":[{"id":"a","label":"Animals"},{"id":"b","label":"Mammals","parent":"a"},{"id":"c","label":"Birds","parent":"a","edge":"has wings"}]}  any other tree: hierarchy, recursion tree, decision tree, trie, BST ("side":"left|right" on each child of a binary tree)
 - {"type":"array","label":"A","values":[3,7,12,18,23],"pointers":[{"index":0,"label":"low"},{"index":2,"label":"mid"}],"highlight":[2],"dim":[3,4],"caption":"step 1"}  an array, list, stack or memory row with index numbers ("start":1 for 1-based), named pointers, highlighted and greyed-out cells
   Trees and arrays are laid out by the board, so they are always neat: never draw them with figure shapes. To trace an algorithm, draw a new array (or tree) for each step, in the beat that explains that step.
+- {"type":"code","lang":"python","code":"def add(a, b):\\n    return a + b\\n\\nprint(add(2, 3))","caption":"...","highlight":[2]}  a short program (at most 25 lines; "highlight" marks the lines you are talking about). Use it for programming topics: Python unless the student asked for another language ("lang": "c", "cpp", "java", "javascript", "sql"), or "pseudocode" for an algorithm on its own. Python code is ACTUALLY RUN and its real output is shown under it, so every Python snippet must run as written: it may use what earlier snippets in this part defined; it imports only from collections, heapq, bisect, itertools, functools, math, random, dataclasses, typing (no files, input(), os or sys; use float("inf")); and it ends with print(...) of a small example so the output shows.
 Optional on any item: "id" (letters/digits, so you can point at it later), "color" (white|yellow|blue|green|red|pink|orange|purple; use colour with meaning, e.g. forces red, velocity blue), "size":"half" (half board width, so a figure or plot can sit beside a text or equation item drawn right before or after it).`;
 
 const BEAT_RULES = `BEATS. You teach in beats. A beat is {"say":"...","draw":[...],"point":"optional id"}.
@@ -73,7 +74,7 @@ const BEAT_RULES = `BEATS. You teach in beats. A beat is {"say":"...","draw":[..
 - "point" (optional) is the id of an item drawn earlier; it gets highlighted while you refer back to it.
 
 OUTPUT FORMAT: only a JSON object, no prose, no code fences: {"beats":[{...},{...}]}
-In JSON strings, write every LaTeX backslash doubled: "\\\\frac{a}{b}", "\\\\theta".`;
+In JSON strings, write every LaTeX backslash doubled: "\\\\frac{a}{b}", "\\\\theta". Only LaTeX doubles them: in "code", a line break is \\n and a quote is \\" (one backslash), never \\\\n.`;
 
 const TEACHING_RULES = `HOW YOU TEACH
 1. Intuition first: open with a relatable situation, question or picture, then formalise.
@@ -81,7 +82,8 @@ const TEACHING_RULES = `HOW YOU TEACH
 3. Make it visual: every section needs at least one figure, plot, flowchart, table or derivation, whichever genuinely helps understanding.
 4. Worked examples use real numbers; show every step and check the arithmetic and units.
 5. Point out common mistakes and exam tips where they matter.
-6. Be accurate. Never invent facts, formulas or data. When you trace an algorithm or work an example, check each step (indices, arithmetic, units) before you say it.`;
+6. Be accurate. Never invent facts, formulas or data. When you trace an algorithm or work an example, check each step (indices, arithmetic, units) before you say it.
+7. Programming topics (data structures, algorithms, a language): show the real code with "code" items, built up a function at a time, next to array or tree diagrams of what it does to the data. In "say", explain what the code does and why, never read it out symbol by symbol.`;
 
 export function outlinePrompt(input: { topic: string; level: Level; language: Language; depth: Depth; sourceText?: string; research?: string; sourceBudget?: number }) {
   const plan = DEPTH_PLAN[input.depth];
@@ -90,7 +92,7 @@ export function outlinePrompt(input: { topic: string; level: Level; language: La
 You are planning a whiteboard lesson. Design a clear teaching arc: hook and intuition, core definitions and concepts, the main principle (with derivation where the subject has one), worked example(s), applications and common misconceptions, and a short recap.
 
 Return only a JSON object, no prose:
-{"title":"lesson title (max 8 words)","subject":"e.g. Physics","difficulty":"basic|intermediate|advanced","summary":"one sentence on what the student will understand","objectives":["3 or 4 concrete learning outcomes"],"sections":[{"title":"short section title","goal":"what this section teaches AND what to draw (a diagram, graph, flowchart, derivation or worked example)"}]}
+{"title":"lesson title (max 8 words)","subject":"e.g. Physics","difficulty":"basic|intermediate|advanced","summary":"one sentence on what the student will understand","objectives":["3 or 4 concrete learning outcomes"],"sections":[{"title":"short section title","goal":"what this section teaches AND what to draw (a diagram, graph, flowchart, derivation, worked example, or code for programming topics)"}]}
 "difficulty" rates the topic itself: "advanced" means graduate or specialist material (e.g. measure theory, control-system design, quantum field theory); "basic" means school-level ideas.
 Plan exactly ${plan.sections} sections. Section titles and goals must be in English.`;
   const user = `Topic: ${input.topic}${researchBlock(input.research, 4000)}${materialForPlan(input.sourceText, input.sourceBudget ?? 6000)}`;
@@ -181,9 +183,12 @@ export function checkBeatsPrompt(input: {
   reference?: string;
   /** Errors found by exact computation (SymPy): certain, and each must be fixed. */
   exact?: string[];
+  /** What the part's Python printed (or the error) when actually run. */
+  runs?: string[];
 }) {
   const first = input.first ?? 0;
-  const beats = input.beats.map((b, i) => `[${first + i}] ${JSON.stringify({ say: b.say, draw: b.draw })}`).join("\n");
+  // Run results go in their own section below, not inside the items the reviewer may rewrite.
+  const beats = input.beats.map((b, i) => `[${first + i}] ${JSON.stringify({ say: b.say, draw: b.draw }, (k, v) => (k === "run" ? undefined : v))}`).join("\n");
   const earlier = input.earlier?.length
     ? `\n\nWhat the teacher said just before (already checked; context only, do not fix):\n${input.earlier.slice(-6).map((s, i, a) => `[${first - a.length + i}] ${s}`).join("\n")}`
     : "";
@@ -191,8 +196,11 @@ export function checkBeatsPrompt(input: {
     ? `\n\nREFERENCE, computed by actually running the algorithm (it is correct; where the material uses the same input, any step that differs from it is wrong):\n${input.reference}`
     : "";
   const exact = input.exact?.length ? `\n\nEXACT CHECKS (computed with SymPy) found these definite errors; fix every one:\n${input.exact.join("\n")}` : "";
+  const runs = input.runs?.length
+    ? `\n\nCODE RUNS (the Python on the board, actually executed; these results are certain):\n${input.runs.join("\n")}\nWhen you fix code, return the whole corrected "code" item; it will be run again.`
+    : "";
   const user = `Topic: ${input.topic}. Learner: ${LEVEL_TEXT[input.level]}
-${input.context}${researchBlock(input.research, 3000)}${earlier}${reference}${exact}
+${input.context}${researchBlock(input.research, 3000)}${earlier}${reference}${exact}${runs}
 
 The material to check, one beat per line: [index] {"say": spoken narration, "draw": board items}
 <beats>
@@ -201,6 +209,7 @@ ${beats}
 
 ${CHECK_STEPS}
 5. Every board item against the narration and the facts: labels, values, order of elements, which node is where, arrow directions, axis labels, plotted functions and ranges.
+6. Code items: the code does what the narration says it does (right algorithm, indices, edge cases such as an empty list), and any complexity claimed for it is right.
 
 Return only JSON.
 If everything is correct: {"ok":true}
@@ -210,10 +219,13 @@ Include "say" and/or "draw" only for beats that change. In a corrected "draw", k
 }
 
 /** Review a chunk of exam notes; corrections are exact find/replace pairs. */
-export function checkNotesPrompt(input: { topic: string; level: Level; context: string; research?: string; notes: string; exact?: string[] }) {
+export function checkNotesPrompt(input: { topic: string; level: Level; context: string; research?: string; notes: string; exact?: string[]; runs?: string[] }) {
   const exact = input.exact?.length ? `\n\nEXACT CHECKS (computed with SymPy) found these definite errors in the notes; fix every one:\n${input.exact.join("\n")}` : "";
+  const runs = input.runs?.length
+    ? `\n\nCODE RUNS (the notes' Python blocks, actually executed in order; these results are certain). Fix every block that fails, and make every stated output match what the code really prints:\n${input.runs.join("\n")}`
+    : "";
   const user = `Topic: ${input.topic}. Learner: ${LEVEL_TEXT[input.level]}
-${input.context}${researchBlock(input.research, 3000)}${exact}
+${input.context}${researchBlock(input.research, 3000)}${exact}${runs}
 
 <notes>
 ${input.notes}
@@ -422,6 +434,7 @@ Formatting rules:
 - Maths uses KaTeX syntax: inline $...$ and display $$...$$ on their own lines. Use \\begin{aligned} for multi-line work. No HTML.
 - Diagrams: for processes, cycles, hierarchies and classifications use a fenced \`\`\`mermaid block (flowchart TD or LR; put labels with spaces or symbols in quotes, e.g. A["Light energy"]). For geometry, physics setups, graphs, trees and arrays (data structures, algorithm steps) use a fenced \`\`\`diagram block holding ONE JSON whiteboard item (a "figure" with shapes, a "plot", a "tree" or an "array"), from this specification:
 ${BOARD_SPEC.split("\n").filter((l) => /figure|plot|shape|Figure coordinates|expr uses|"type":"tree"|"type":"array"|Trees and arrays/.test(l)).join("\n")}
+- Code (programming topics): fenced \`\`\`python blocks (or the language the student asked for), each runnable as written in order (a later block may use what an earlier one defined), standard library only, ending with print(...) of a small example, followed by its output in a plain \`\`\`text block. Python blocks are actually run and the notes are corrected to match what they print.
 - Be accurate and complete; do not pad. Check every numerical answer.${
     input.references?.length && (!scope || "closing" in scope)
       ? `\n- End with a "## References" section listing exactly these sources as Markdown links (do not add others):\n${input.references

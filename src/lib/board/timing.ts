@@ -42,6 +42,8 @@ export function itemWeight(item: BoardItem): number {
       return 0.6 + 0.4 * item.nodes.length;
     case "array":
       return 0.6 + 0.14 * item.values.length + 0.35 * (item.pointers?.length ?? 0);
+    case "code":
+      return 0.6 + item.code.split("\n").reduce((w, l) => w + 0.25 + l.trim().length / 70, 0);
   }
 }
 

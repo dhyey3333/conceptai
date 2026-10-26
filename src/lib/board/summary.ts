@@ -117,6 +117,10 @@ export function summarizeItem(item: BoardItem): string {
       return describeTree(item);
     case "array":
       return describeArray(item);
+    case "code": {
+      const run = item.run ? (item.run.ok ? (item.run.output.trim() ? `; it prints: ${item.run.output.trim().slice(0, 300)}` : "; it runs") : `; running it fails: ${item.run.error}`) : "";
+      return `${item.lang === "pseudocode" ? "Pseudocode" : `Code (${item.lang})`}${item.caption ? ` (${item.caption})` : ""}:\n${item.code}${run}`;
+    }
     case "plot":
       return `Graph of ${(item.functions ?? []).map((f) => f.label ?? f.expr).join(", ") || "data points"} for x in [${item.xMin}, ${item.xMax}]`;
   }

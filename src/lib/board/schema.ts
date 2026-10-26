@@ -1,13 +1,14 @@
 /**
  * The whiteboard vocabulary.
  *
- * The AI never sends code. It sends JSON "board items" from this closed list,
+ * The AI never sends anything the browser runs. It sends JSON "board items" from this closed list,
  * and every item is validated here before anything is drawn: unknown types and
  * fields are dropped, strings are length-capped and stripped of control
  * characters, numbers are clamped to the drawable area, and lists are capped.
  * A malformed item is discarded on its own instead of failing the whole lesson.
  */
 import { z } from "zod";
+import { repairEscapes } from "./code-text";
 
 export const COLORS = ["white", "yellow", "blue", "green", "red", "pink", "orange", "purple", "gray"] as const;
 export type BoardColor = (typeof COLORS)[number];
@@ -170,6 +171,31 @@ const ArrayPointerSchema = z.object({ index, label: text(14), color });
 /** An array cell; null or "" is an empty cell. */
 const cell = z.union([z.string(), z.number(), z.null()]).transform((v) => (v === null ? "" : cleanText(String(v), 12)));
 
+export const CODE_LANGS = ["python", "pseudocode", "c", "cpp", "java", "javascript", "sql"] as const;
+const CODE_MAX_LINES = 30;
+
+/** Program text keeps its indentation and blank lines (cleanText would fold them); tabs become 4 spaces. */
+export function cleanCode(value: string): string {
+  const lines = value
+    .replace(/\r\n?/g, "\n")
+    .replace(CONTROL_CHARS, "")
+    .replace(/\t/g, "    ")
+    .split("\n")
+    .map((l) => l.trimEnd().slice(0, 110));
+  while (lines.length && !lines[0].trim()) lines.shift();
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  return lines.slice(0, CODE_MAX_LINES).join("\n");
+}
+
+/** What happened when the code was run (set by the server only, never taken from the model). */
+const CodeRunSchema = z.object({
+  ok: z.boolean(),
+  output: z.string().max(2000).catch(""),
+  error: z.string().max(300).optional().catch(undefined),
+  line: z.number().int().optional().catch(undefined),
+});
+export type CodeRun = z.output<typeof CodeRunSchema>;
+
 export const BoardItemSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("title"), text: text(90), ...itemBase }),
   z.object({ type: z.literal("heading"), text: text(90), ...itemBase }),
@@ -256,6 +282,19 @@ export const BoardItemSchema = z.discriminatedUnion("type", [
     size,
     ...itemBase,
   }),
+  // Program text, shown with syntax colours and written line by line. It is only ever
+  // displayed on the board; Python is run by the local helper (python/helper/coderun.py).
+  z.object({
+    type: z.literal("code"),
+    code: z.string().transform(cleanCode).pipe(z.string().min(1)),
+    lang: z.enum(CODE_LANGS).catch("python"),
+    /** Lines to mark (1-based), e.g. the line being explained. */
+    highlight: lenientArray(z.coerce.number().int().min(1).max(CODE_MAX_LINES), 10).optional().catch(undefined),
+    caption: optText(80),
+    run: CodeRunSchema.optional().catch(undefined),
+    size,
+    ...itemBase,
+  }),
 ]);
 
 export type BoardItem = z.output<typeof BoardItemSchema>;
@@ -321,6 +360,28 @@ const TYPE_ALIASES: Record<string, BoardItemType> = {
   array_diagram: "array",
   memory: "array",
   cells: "array",
+  code: "code",
+  snippet: "code",
+  program: "code",
+  python: "code",
+  pseudocode: "code",
+  algorithm: "code",
+};
+
+const LANG_ALIASES: Record<string, (typeof CODE_LANGS)[number]> = {
+  python: "python",
+  python3: "python",
+  py: "python",
+  pseudocode: "pseudocode",
+  pseudo: "pseudocode",
+  algorithm: "pseudocode",
+  c: "c",
+  cpp: "cpp",
+  "c++": "cpp",
+  java: "java",
+  javascript: "javascript",
+  js: "javascript",
+  sql: "sql",
 };
 
 const SHAPE_ALIASES: Record<string, Shape["shape"]> = {
@@ -467,9 +528,35 @@ function normaliseItem(raw: unknown): unknown {
     else if (Array.isArray(it.nodes)) it.nodes = normaliseTreeNodes(it.nodes);
     if (it.highlight !== undefined && !Array.isArray(it.highlight)) it.highlight = [it.highlight];
   }
+  if (it.type === "code") {
+    let code = it.code ?? it.source ?? it.program ?? it.text ?? it.content ?? it.lines;
+    if (Array.isArray(code)) code = code.map(String).join("\n");
+    // Code wrapped in a Markdown fence: keep what is inside (and its language).
+    const fence = typeof code === "string" ? /^\s*```([\w+#-]*)[^\n]*\n([\s\S]*?)\n?```\s*$/.exec(code) : null;
+    if (fence) {
+      code = fence[2];
+      it.lang ??= fence[1] || undefined;
+    }
+    // Missing language: Python (what lessons run). Named but unknown: shown, never run.
+    const lang = String(it.lang ?? it.language ?? (kind === "pseudocode" || kind === "algorithm" ? "pseudocode" : "python")).toLowerCase();
+    it.lang = LANG_ALIASES[lang] ?? "pseudocode";
+    // Python and pseudocode get the full repair; other languages have different comments, so only
+    // code with no real line break at all (every one over-escaped) is split at its "\n"s.
+    if (typeof code === "string") {
+      if (it.lang === "python" || it.lang === "pseudocode") code = repairEscapes(code);
+      else if (!code.includes("\n")) code = code.replace(/\\n/g, "\n");
+    }
+    it.code = code;
+    if (it.highlight !== undefined && !Array.isArray(it.highlight)) it.highlight = [it.highlight];
+  }
   if (it.type === "array") {
     it.values ??= it.items ?? it.elements ?? it.data ?? it.cells ?? it.array;
     if (typeof it.values === "string") it.values = it.values.split(/\s*,\s*|\s+/).filter(Boolean);
+    // An empty stack or list is worth drawing: one empty cell, without an index.
+    if (Array.isArray(it.values) && it.values.length === 0) {
+      it.values = [""];
+      it.indices = false;
+    }
     // Pointers as {"low": 0, "high": 6}, or with "at"/"i"/"name" keys.
     if (isObj(it.pointers)) it.pointers = Object.entries(it.pointers).map(([label, at]) => ({ label, index: at }));
     if (Array.isArray(it.pointers)) {

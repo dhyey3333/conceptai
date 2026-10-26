@@ -11,14 +11,14 @@ from __future__ import annotations
 from fastapi import FastAPI, File, Form, UploadFile
 from pydantic import BaseModel, Field
 
-from . import mathcheck, traces
+from . import coderun, mathcheck, traces
 
 app = FastAPI(title="ConceptAI helper")
 
 
 @app.get("/health")
 def health() -> dict:
-    return {"ok": True, "tools": ["math", "trace", "ocr"]}
+    return {"ok": True, "tools": ["math", "trace", "ocr", "code"]}
 
 
 class MathItem(BaseModel):
@@ -55,6 +55,16 @@ def trace(req: TraceRequest) -> dict:
     """A real run of the algorithm the text is about (or the one named), or null if it isn't one we run."""
     name = req.algorithm or traces.detect(req.text)
     return {"trace": traces.run(name, req.input, req.target) if name else None}
+
+
+class CodeRequest(BaseModel):
+    cells: list[str] = Field(max_length=20)
+
+
+@app.post("/code/run")
+def code_run(req: CodeRequest) -> dict:
+    """Run lesson snippets in order (later ones may use what earlier ones define); one result each."""
+    return {"results": [r.__dict__ for r in coderun.run_cells([c[: coderun.MAX_CHARS + 1] for c in req.cells])]}
 
 
 @app.post("/pdf/ocr")

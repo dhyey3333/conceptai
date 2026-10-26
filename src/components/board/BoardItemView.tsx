@@ -10,6 +10,7 @@ import { PlotItem } from "./PlotItem";
 import { FlowchartItem } from "./FlowchartItem";
 import { TreeItem } from "./TreeItem";
 import { ArrayItem } from "./ArrayItem";
+import { CodeItem } from "./CodeItem";
 
 /** Whether an item takes half the board width (so another can sit beside it). */
 export function isHalf(item: BoardItem): boolean {
@@ -54,5 +55,7 @@ export const BoardItemView = memo(function BoardItemView({
       return <TreeItem item={item} timing={timing} width={w} />;
     case "array":
       return <ArrayItem item={item} timing={timing} width={w} />;
+    case "code":
+      return <CodeItem item={item} timing={timing} />;
   }
 });

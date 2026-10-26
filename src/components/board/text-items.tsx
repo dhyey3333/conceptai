@@ -122,7 +122,7 @@ export function BulletsItem({ item, timing }: { item: ItemOf<"bullets">; timing:
  * its edge (down to 55%; past that it scrolls). Measured after render and
  * again once fonts load, since KaTeX glyph widths change then.
  */
-function useFitFont<T extends HTMLElement>(key: string) {
+export function useFitFont<T extends HTMLElement>(key: string) {
   const ref = useRef<T>(null);
   const [px, setPx] = useState<number | undefined>(undefined);
   useLayoutEffect(() => {

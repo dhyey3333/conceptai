@@ -1,6 +1,7 @@
 /**
  * ConceptAI's Python helper (the python/ folder): exact maths checks with
- * SymPy, real algorithm traces for worked examples, and OCR for scanned PDF
+ * SymPy, real algorithm traces for worked examples, running the Python code
+ * lessons show (python/helper/coderun.py), and OCR for scanned PDF
  * pages. The server starts it in the background when it starts
  * (`uv run uvicorn` on 127.0.0.1:3110; the first run installs its packages).
  *
@@ -14,6 +15,9 @@ import path from "node:path";
 
 const BASE = (process.env.PY_HELPER_URL ?? "http://127.0.0.1:3110").replace(/\/$/, "");
 const enabled = () => process.env.PY_HELPER?.trim().toLowerCase() !== "off";
+
+/** Environment variables the helper must not see (keys, tokens, and the AI and database settings). */
+export const SECRET_ENV = /KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH|CREDENTIAL|COOKIE|^(LLM|GEMINI|GROQ|OPENAI|ANTHROPIC|SUPABASE|STT|TTS)_/i;
 
 let starting: Promise<boolean> | null = null;
 let lastUp = 0;
@@ -46,6 +50,8 @@ export function startHelper(): Promise<boolean> {
     // `uv run` creates the environment and installs the packages on the first start.
     const child = spawn(/*turbopackIgnore: true*/ process.env.UV_BIN?.trim() || "uv", ["run", "--project", dir, "uvicorn", "helper.app:app", "--host", "127.0.0.1", "--port", port], {
       cwd: dir,
+      // The helper runs lesson code: it gets none of the API keys this server holds.
+      env: Object.fromEntries(Object.entries(process.env).filter(([k]) => !SECRET_ENV.test(k))) as NodeJS.ProcessEnv,
       stdio: ["ignore", out, out],
       windowsHide: true,
       // Lives as long as this server (see ollama.ts for why it isn't detached on Windows).
@@ -96,6 +102,26 @@ export async function callHelper<T>(route: string, body: object | FormData, time
 export async function workedExample(text: string): Promise<string | undefined> {
   const r = await callHelper<{ trace: { text: string } | null }>("/trace", { text: text.slice(0, 4000) }, 3000);
   return r?.trace?.text;
+}
+
+export interface PythonRun {
+  ok: boolean;
+  output: string;
+  error?: string | null;
+  line?: number | null;
+  /** Not run: why (it imports something not allowed, say). */
+  refused?: string | null;
+}
+
+/**
+ * Run Python snippets in order in one fresh process, like notebook cells (a later
+ * one may use what an earlier one defined). null when the helper is down or
+ * PY_RUN_CODE=off: then no output is shown rather than an unverified one.
+ */
+export async function runPython(cells: string[]): Promise<PythonRun[] | null> {
+  if (!cells.length || process.env.PY_RUN_CODE?.trim().toLowerCase() === "off") return null;
+  const r = await callHelper<{ results: PythonRun[] }>("/code/run", { cells: cells.slice(-20) }, 12_000);
+  return r?.results?.length === Math.min(cells.length, 20) ? r.results : null;
 }
 
 export interface MathFinding {

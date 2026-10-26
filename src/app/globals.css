@@ -252,6 +252,98 @@ body {
   font-weight: 700;
 }
 
+/* Code: monospace on a slightly darker slate, so it reads as a program, not chalk. */
+.b-code {
+  border: 1.5px solid rgb(244 242 234 / 0.18);
+  border-radius: 10px;
+  background: rgb(0 0 0 / 0.22);
+  overflow: hidden;
+}
+.b-code-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 14px;
+  border-bottom: 1px solid rgb(244 242 234 / 0.12);
+  font-family: var(--font-sans);
+}
+.b-code-lang {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-blue);
+}
+.b-code-caption {
+  font-size: 15px;
+  color: var(--ink-muted);
+}
+.b-code-body {
+  padding: 8px 0;
+  font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+  font-size: 19px;
+  line-height: 1.5;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.b-code-line {
+  display: flex;
+  white-space: pre;
+  padding-right: 14px;
+}
+.b-code-line.is-marked {
+  background: rgb(255 209 102 / 0.12);
+}
+.b-code-line.is-error {
+  background: rgb(255 128 128 / 0.16);
+}
+.b-code-no {
+  flex: none;
+  width: 2.6em;
+  padding-right: 0.9em;
+  text-align: right;
+  color: var(--ink-muted);
+  opacity: 0.55;
+  user-select: none;
+}
+.b-code-text {
+  color: var(--ink-white);
+}
+.tok-kw { color: var(--ink-pink); }
+.tok-str { color: var(--ink-green); }
+.tok-num { color: var(--ink-orange); }
+.tok-com { color: var(--ink-gray); font-style: italic; }
+.tok-fn { color: var(--ink-blue); }
+.tok-def { color: var(--ink-yellow); }
+.b-code-run {
+  border-top: 1px dashed rgb(244 242 234 / 0.22);
+  padding: 8px 14px 10px;
+}
+.b-code-run-tag {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-green);
+}
+.b-code-run.is-error .b-code-run-tag {
+  color: var(--ink-red);
+}
+.b-code-run pre {
+  margin: 4px 0 0;
+  font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+  font-size: 17px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  color: var(--ink-white);
+  max-height: 14em;
+  overflow: auto;
+}
+.b-code-run pre.b-code-error {
+  color: var(--ink-red);
+}
+
 .b-svg-wrap {
   position: relative;
   width: 100%;

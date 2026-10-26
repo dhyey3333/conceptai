@@ -17,7 +17,8 @@ import type { Level } from "@/lib/lesson/types";
 import { sanitizeQuiz, type Quiz } from "@/lib/quiz/schema";
 import { extractJsonObject } from "@/lib/stream/jsonObjects";
 import { completeText, LlmError } from "./llm";
-import { callHelper, mathFindings } from "./helper";
+import { callHelper, mathFindings, runPython } from "./helper";
+import { CodeRunner, codeFindings } from "./coderun";
 import { checkBeatsPrompt, checkNotesPrompt, checkQuizPrompt } from "./prompts";
 import type { Tier } from "./env";
 import type { StreamEvent } from "./http";
@@ -156,6 +157,7 @@ export async function checkBeats(subject: CheckSubject, beats: Beat[], opts: Che
       first: from,
       earlier: current.slice(0, from).map((b) => b.say),
       exact: exactFor(from, to),
+      runs: codeFindings(current.slice(from, to), from),
     });
     const { verdict, cutOff } = await review(prompt, opts);
     if (verdict === undefined) {
@@ -213,12 +215,19 @@ export async function* writeThenCheck(
 ): AsyncGenerator<StreamEvent> {
   const beats: Beat[] = [];
   let done: StreamEvent = { type: "done" };
+  // Python on the board is run as each beat arrives, so the real output is drawn with it.
+  const runner = new CodeRunner();
   for await (const ev of write) {
     if (ev.type === "done") {
       done = ev;
       continue;
     }
-    if (ev.type === "beat") beats.push(ev.beat as Beat);
+    if (ev.type === "beat") {
+      const beat = opts.helper === false ? (ev.beat as Beat) : await runner.attach(ev.beat as Beat);
+      beats.push(beat);
+      yield { ...ev, beat };
+      continue;
+    }
     yield ev;
   }
   if (!verifyEnabled() || !beats.length) {
@@ -228,9 +237,46 @@ export async function* writeThenCheck(
   yield { type: "checking", beats: beats.length };
   // Whatever example the part actually used, the check gets the true run of the algorithm on THAT input.
   const actual = subject.reference && opts.helper !== false ? await traceForExample(subject, beats) : undefined;
-  const { fixes, checked } = await checkBeats(actual ? { ...subject, reference: actual } : subject, beats, opts);
+  const { fixes, checked, corrections } = await checkBeatsAndCode(actual ? { ...subject, reference: actual } : subject, beats, opts);
   for (const f of fixes) yield { type: "fix", index: f.index, beat: f.beat };
-  yield { ...done, checked, fixes: fixes.length };
+  yield { ...done, checked, fixes: corrections };
+}
+
+/** Run all of a part's Python again, in order (later snippets may use earlier ones): the beats with fresh results. */
+export async function rerunCode(beats: Beat[]): Promise<Beat[]> {
+  const runner = new CodeRunner();
+  const out: Beat[] = [];
+  for (const b of beats) out.push(await runner.attach(b));
+  return out;
+}
+
+/**
+ * Fact-check beats whose Python has already run, then run any corrected code again.
+ * Returns every beat that changed (a correction, or code whose output changed because
+ * of one) and how many beats the reviewer corrected.
+ */
+export async function checkBeatsAndCode(
+  subject: CheckSubject,
+  beats: Beat[],
+  opts: CheckOpts,
+): Promise<{ fixes: BeatFix[]; checked: boolean; corrections: number }> {
+  const { fixes, checked } = await checkBeats(subject, beats, opts);
+  const final = [...beats];
+  const changed = new Set<number>();
+  for (const f of fixes) {
+    final[f.index] = f.beat;
+    changed.add(f.index);
+  }
+  if (opts.helper !== false && fixes.some((f) => f.beat.draw.some((d) => d.type === "code"))) {
+    const fresh = await rerunCode(final);
+    fresh.forEach((b, i) => {
+      if (JSON.stringify(b) !== JSON.stringify(final[i])) {
+        final[i] = b;
+        changed.add(i);
+      }
+    });
+  }
+  return { fixes: [...changed].sort((a, b) => a - b).map((i) => ({ index: i, beat: final[i] })), checked, corrections: fixes.length };
 }
 
 // --- notes --------------------------------------------------------------------------
@@ -280,11 +326,22 @@ export async function checkNotes(
   let content = markdown;
   let fixes = 0;
   let checked = markdown.trim().length > 0;
+  // The notes' Python blocks, run in order like notebook cells (a later block may use an earlier one).
+  const blocks = opts.helper === false ? [] : [...markdown.matchAll(/```(?:python3?|py)[^\n]*\n([\s\S]*?)```/g)].map((m) => m[1]);
+  const results = (await runPython(blocks)) ?? [];
+  const runs = blocks.flatMap((code, i) => {
+    const r = results[i];
+    if (!r || r.refused) return [];
+    const block = `The python block starting ${JSON.stringify(code.trim().split("\n")[0].slice(0, 80))}`;
+    const out = r.output.trim();
+    return [{ code, note: r.ok ? `${block} prints ${out ? JSON.stringify(out.slice(0, 500)) : "nothing"}.` : `${block} FAILS when run: ${r.error}${r.line ? ` (its line ${r.line})` : ""}.` }];
+  });
   for (const chunk of chunkMarkdown(markdown)) {
     // Display and inline maths in the notes, checked exactly first.
     const maths = [...chunk.matchAll(/\$\$([\s\S]+?)\$\$|\$([^$\n]+)\$/g)].map((m, i) => ({ id: `${i}`, latex: (m[1] ?? m[2]).trim() }));
     const exact = opts.helper === false ? [] : (await mathFindings(maths)).map((f) => f.message);
-    const { verdict } = await review(checkNotesPrompt({ ...subject, notes: chunk, exact }), opts, 4000);
+    const chunkRuns = runs.filter((r) => chunk.includes(r.code)).map((r) => r.note);
+    const { verdict } = await review(checkNotesPrompt({ ...subject, notes: chunk, exact, runs: chunkRuns }), opts, 4000);
     if (verdict === undefined) {
       checked = false;
       continue;
