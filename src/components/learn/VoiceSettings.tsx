@@ -49,7 +49,7 @@ export function VoiceSettings({ ttsAvailable, sttAvailable }: { ttsAvailable: bo
                 disabled={!ttsAvailable}
                 onClick={() => updateSettings({ voiceEngine: "ai" })}
                 className={`flex-1 rounded-lg border px-2 py-1.5 text-[13px] ${useAi ? "border-accent/60 bg-accent/15" : "border-line-strong text-muted"} disabled:opacity-40`}
-                title={ttsAvailable ? "Server AI voice" : "Set TTS_PROVIDER and TTS_API_KEY to enable"}
+                title={ttsAvailable ? "A natural voice made on the server (offline, or a cloud voice if one is set up)" : "Turns on by itself once the offline voice is downloaded"}
               >
                 AI voice
               </button>
@@ -60,7 +60,11 @@ export function VoiceSettings({ ttsAvailable, sttAvailable }: { ttsAvailable: bo
                 Browser voice
               </button>
             </div>
-            {!ttsAvailable && <p className="mt-1.5 text-[11px] text-subtle">AI voice needs TTS_PROVIDER + TTS_API_KEY on the server.</p>}
+            {!ttsAvailable && (
+              <p className="mt-1.5 text-[11px] text-subtle">
+                The natural offline voice turns on by itself once it has downloaded (about 120 MB, with the Python tools running), or set TTS_PROVIDER + TTS_API_KEY for a cloud voice.
+              </p>
+            )}
           </div>
           {!useAi && (
             <label className="block">

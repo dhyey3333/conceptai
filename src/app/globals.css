@@ -252,6 +252,17 @@ body {
   font-weight: 700;
 }
 
+/* The page lesson videos are recorded from: no board toolbar, no scrollbars. */
+.render-video .no-print {
+  display: none;
+}
+.render-video * {
+  scrollbar-width: none;
+}
+.render-video *::-webkit-scrollbar {
+  display: none;
+}
+
 /* Code: monospace on a slightly darker slate, so it reads as a program, not chalk. */
 .b-code {
   border: 1.5px solid rgb(244 242 234 / 0.18);

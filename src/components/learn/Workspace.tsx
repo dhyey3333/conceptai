@@ -22,6 +22,7 @@ import { NotesPanel } from "./NotesPanel";
 import { OutlinePanel } from "./OutlinePanel";
 import { PlayerBar } from "./PlayerBar";
 import { PracticePanel } from "./PracticePanel";
+import { VideoButton } from "./VideoButton";
 import { VoiceSettings } from "./VoiceSettings";
 
 type Boot = { lesson: Lesson; status: ServerStatus } | "missing" | null;
@@ -434,6 +435,7 @@ function LessonView({ lesson, status, autostart }: { lesson: Lesson; status: Ser
             ) : null}
           </div>
         </div>
+        <VideoButton lesson={l} ready={sections.length > 0 && readyParts.length === sections.length && generatingIdx < 0 && checkingIdx < 0} />
         <VoiceSettings ttsAvailable={status.tts.configured} sttAvailable={status.stt.configured} />
       </header>
 

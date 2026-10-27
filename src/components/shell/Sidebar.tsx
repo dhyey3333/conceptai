@@ -122,7 +122,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         </div>
         <div className="flex items-center gap-2">
           <span className={cn("h-2 w-2 rounded-full", status?.tts.configured ? "bg-ok" : "bg-subtle")} />
-          Voice: {status?.tts.configured ? `AI (${status.tts.provider})` : "browser"}
+          Voice: {status?.tts.configured ? (status.tts.provider === "local" ? "natural (offline)" : `AI (${status.tts.provider})`) : status?.tts.downloading ? "browser (natural voice downloading)" : "browser"}
         </div>
         {status?.llm.configured && (
           <div className="flex items-center gap-2">

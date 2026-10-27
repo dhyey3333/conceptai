@@ -192,7 +192,7 @@ export class LessonSession {
     const browser = browserSpeechAvailable()
       ? new BrowserSpeaker(() => pickVoice(this.state?.lesson.language ?? "english", this.env.settings.browserVoice))
       : silentSpeaker;
-    return s.voiceEngine === "ai" && this.env.tts ? new CloudSpeaker(browser) : browser;
+    return s.voiceEngine === "ai" && this.env.tts ? new CloudSpeaker(browser, () => this.state?.lesson.language ?? "english") : browser;
   }
 
   updateEnv(env: Partial<SessionEnv>) {

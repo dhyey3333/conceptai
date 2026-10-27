@@ -1,6 +1,6 @@
 import { generateSequentially, llmConfig, providerChain, researchMode, sttConfig, supabaseConfigured, ttsConfig } from "@/lib/server/env";
 import { activeConfig, currentConfigProblem } from "@/lib/server/llm";
-import { helperState } from "@/lib/server/helper";
+import { helperState, localVoice } from "@/lib/server/helper";
 
 /** What's configured on the server. Names only, never keys. */
 export async function GET() {
@@ -23,7 +23,10 @@ export async function GET() {
           problem: currentConfigProblem(),
         }
       : { configured: false },
-    tts: tts ? { configured: true, provider: tts.provider } : { configured: false },
+    // A cloud voice if configured; otherwise the helper's offline voice once it has been downloaded.
+    tts: tts
+      ? { configured: true, provider: tts.provider }
+      : await localVoice().then((v) => (v === "ready" ? { configured: true, provider: "local" } : { configured: false, downloading: v === "downloading" })),
     stt: { configured: !!sttConfig() },
     supabase: { configured: supabaseConfigured() },
     // Exact maths checks, algorithm traces and OCR (python/), when its helper is running.

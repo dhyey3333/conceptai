@@ -200,7 +200,11 @@ export class CloudSpeaker implements Speaker {
   private cache = new Map<string, Promise<{ url: string; ms: number } | null>>();
   private audio: HTMLAudioElement | null = null;
 
-  constructor(private fallback: Speaker) {}
+  /** `language` picks the offline voice (a Hindi voice for Hindi lessons); cloud voices ignore it. */
+  constructor(
+    private fallback: Speaker,
+    private language: () => string = () => "english",
+  ) {}
 
   private load(text: string) {
     let p = this.cache.get(text);
@@ -210,7 +214,7 @@ export class CloudSpeaker implements Speaker {
           const res = await fetch("/api/tts", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text: text.slice(0, 1200) }),
+            body: JSON.stringify({ text: text.slice(0, 1200), language: this.language() }),
           });
           if (!res.ok) return null;
           const url = URL.createObjectURL(await res.blob());

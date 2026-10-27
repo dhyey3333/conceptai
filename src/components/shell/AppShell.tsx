@@ -18,6 +18,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   useEffect(() => setOpen(false), [path]);
 
+  // The page a lesson video is recorded from is the board alone.
+  if (path.startsWith("/render/")) return <>{children}</>;
+
   return (
     <ShellContext.Provider value={{ openSidebar: () => setOpen(true) }}>
       <div className="print-flow flex h-dvh overflow-hidden">

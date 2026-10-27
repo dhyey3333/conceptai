@@ -13,7 +13,8 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, openSync } from "node:fs";
 import path from "node:path";
 
-const BASE = (process.env.PY_HELPER_URL ?? "http://127.0.0.1:3110").replace(/\/$/, "");
+/** Where the helper listens (this computer only, unless PY_HELPER_URL says otherwise). */
+export const BASE = (process.env.PY_HELPER_URL ?? "http://127.0.0.1:3110").replace(/\/$/, "");
 const enabled = () => process.env.PY_HELPER?.trim().toLowerCase() !== "off";
 
 /** Environment variables the helper must not see (keys, tokens, and the AI and database settings). */
@@ -117,6 +118,29 @@ export async function callHelper<T>(route: string, body: object | FormData, time
 export async function workedExample(text: string): Promise<string | undefined> {
   const r = await callHelper<{ trace: { text: string } | null }>("/trace", { text: text.slice(0, 4000) }, 3000);
   return r?.trace?.text;
+}
+
+let voiceCheck = { at: 0, state: "off" as "ready" | "downloading" | "off" };
+
+/**
+ * The helper's offline voice (Kokoro): "ready" once its model is fully on disk,
+ * "downloading" during the one-time ~120 MB download. Until it is ready, lessons
+ * use the browser voice rather than wait for it. Checked at most every 10 s.
+ */
+export async function localVoice(): Promise<"ready" | "downloading" | "off"> {
+  if (process.env.PY_TTS?.trim().toLowerCase() === "off") return "off";
+  if (Date.now() - voiceCheck.at < 10_000) return voiceCheck.state;
+  let state: typeof voiceCheck.state = "off";
+  if (await helperUp()) {
+    try {
+      const h = (await fetch(`${BASE}/health`, { signal: AbortSignal.timeout(1500) }).then((r) => r.json())) as { tts?: { installed?: boolean; downloading?: boolean } };
+      state = h.tts?.installed ? "ready" : h.tts?.downloading ? "downloading" : "off";
+    } catch {
+      state = "off";
+    }
+  }
+  voiceCheck = { at: Date.now(), state };
+  return state;
 }
 
 export interface PythonRun {

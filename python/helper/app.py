@@ -8,17 +8,45 @@ skipped and lessons work as before.
 
 from __future__ import annotations
 
-from fastapi import FastAPI, File, Form, UploadFile
+import threading
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
-from . import coderun, mathcheck, traces
+from . import coderun, mathcheck, traces, tts, video
 
-app = FastAPI(title="ConceptAI helper")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # The offline voice is a one-time ~120 MB download: start it now, so it's there when a lesson or video wants it.
+    threading.Thread(target=tts.prefetch, daemon=True).start()
+    yield
+
+
+app = FastAPI(title="ConceptAI helper", lifespan=lifespan)
 
 
 @app.get("/health")
 def health() -> dict:
-    return {"ok": True, "tools": ["math", "trace", "ocr", "code"]}
+    return {"ok": True, "tools": ["math", "trace", "ocr", "code", "tts", "video"], "tts": tts.state()}
+
+
+class TtsRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+    language: str = Field(default="english", max_length=20)
+    speed: float = Field(default=1.0, ge=0.5, le=2.0)
+
+
+@app.post("/tts")
+def speak(req: TtsRequest) -> Response:
+    """The narration as a WAV file, spoken on this computer (the first call downloads the voice)."""
+    try:
+        samples, rate = tts.synthesize(req.text, req.language, req.speed)
+    except Exception as e:
+        raise HTTPException(503, f"The offline voice isn't available: {e}"[:300]) from e
+    duration = round(len(samples) / rate * 1000)
+    return Response(tts.to_wav(samples, rate), media_type="audio/wav", headers={"X-Duration-Ms": str(duration)})
 
 
 class MathItem(BaseModel):
@@ -75,3 +103,64 @@ async def pdf_ocr(file: UploadFile = File(...), pages: str = Form("")) -> dict:
     data = await file.read(16 * 1024 * 1024)
     wanted = [int(p) for p in pages.split(",") if p.strip().isdigit()] or None
     return {"pages": ocr_pages(data, wanted)}
+
+
+class VideoBeat(BaseModel):
+    say: str = Field(default="", max_length=1200)
+    speech: str = Field(default="", max_length=1200)
+    draw: list[dict] = Field(default_factory=list, max_length=8)
+    point: str | None = Field(default=None, max_length=40)
+
+
+class VideoPart(BaseModel):
+    title: str = Field(max_length=200)
+    beats: list[VideoBeat] = Field(max_length=60)
+
+
+class VideoLesson(BaseModel):
+    title: str = Field(max_length=200)
+    language: str = Field(default="english", max_length=20)
+    parts: list[VideoPart] = Field(min_length=1, max_length=60)
+
+
+class VideoRequest(BaseModel):
+    lesson: VideoLesson
+    appUrl: str = Field(max_length=60)
+
+
+def _job(jid: str) -> video.Job:
+    job = video.get(jid)
+    if not job:
+        raise HTTPException(404, "No such video (videos are kept for an hour).")
+    return job
+
+
+@app.post("/video/start")
+def video_start(req: VideoRequest) -> dict:
+    """Start making a lesson video; poll /video/{id} for progress."""
+    if sum(len(p.beats) for p in req.lesson.parts) > 400:
+        raise HTTPException(413, "The lesson is too long for one video.")
+    try:
+        job = video.start(req.lesson.model_dump(), req.appUrl)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return job.status()
+
+
+@app.get("/video/{jid}")
+def video_status(jid: str) -> dict:
+    return _job(jid).status()
+
+
+@app.get("/video/{jid}/data")
+def video_data(jid: str) -> dict:
+    """The lesson and beat lengths, for the app's /render page that is being recorded."""
+    return video.render_data(_job(jid))
+
+
+@app.get("/video/{jid}/file")
+def video_file(jid: str) -> FileResponse:
+    job = _job(jid)
+    if job.state != "done" or not job.file:
+        raise HTTPException(409, "The video isn't ready yet.")
+    return FileResponse(job.file, media_type="video/mp4", filename=job.file.name)

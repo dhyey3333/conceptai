@@ -82,7 +82,8 @@ export interface ServerStatus {
     /** a setup mistake seen recently (rejected key, unknown model) */
     problem?: string;
   };
-  tts: { configured: boolean; provider?: string };
+  /** provider "local": the Python helper's offline voice; downloading: it is still being fetched. */
+  tts: { configured: boolean; provider?: string; downloading?: boolean };
   stt: { configured: boolean };
   supabase: { configured: boolean };
   /** The Python helper: running, or still starting (it takes a few seconds after the app starts). */
