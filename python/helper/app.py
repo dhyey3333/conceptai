@@ -42,7 +42,8 @@ class TtsRequest(BaseModel):
 def speak(req: TtsRequest) -> Response:
     """The narration as a WAV file, spoken on this computer (the first call downloads the voice)."""
     try:
-        samples, rate = tts.synthesize(req.text, req.language, req.speed)
+        with tts.live():  # a lesson is waiting: background videos give way
+            samples, rate = tts.synthesize(req.text, req.language, req.speed)
     except Exception as e:
         raise HTTPException(503, f"The offline voice isn't available: {e}"[:300]) from e
     duration = round(len(samples) / rate * 1000)
@@ -126,6 +127,8 @@ class VideoLesson(BaseModel):
 class VideoRequest(BaseModel):
     lesson: VideoLesson
     appUrl: str = Field(max_length=60)
+    # Started by the app on its own (the lesson was just written), not by a click.
+    auto: bool = False
 
 
 def _job(jid: str) -> video.Job:
@@ -141,7 +144,9 @@ def video_start(req: VideoRequest) -> dict:
     if sum(len(p.beats) for p in req.lesson.parts) > 400:
         raise HTTPException(413, "The lesson is too long for one video.")
     try:
-        job = video.start(req.lesson.model_dump(), req.appUrl)
+        job = video.start(req.lesson.model_dump(), req.appUrl, auto=req.auto)
+    except video.Busy as e:
+        raise HTTPException(429, "Other videos are being made; this one will be made later.") from e
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     return job.status()
@@ -163,4 +168,4 @@ def video_file(jid: str) -> FileResponse:
     job = _job(jid)
     if job.state != "done" or not job.file:
         raise HTTPException(409, "The video isn't ready yet.")
-    return FileResponse(job.file, media_type="video/mp4", filename=job.file.name)
+    return FileResponse(job.file, media_type="video/mp4", filename=job.download_name())

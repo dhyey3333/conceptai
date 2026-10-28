@@ -31,8 +31,9 @@ describe("starting a lesson video", () => {
     });
     expect(res.status).toBe(200);
     expect(sent[0].url).toBe("http://helper.test/video/start");
-    const body = sent[0].body as { appUrl: string; lesson: { parts: { beats: { say: string; speech: string; draw: { type: string }[] }[] }[] } };
+    const body = sent[0].body as { appUrl: string; auto: boolean; lesson: { parts: { beats: { say: string; speech: string; draw: { type: string }[] }[] }[] } };
     expect(body.appUrl).toBe("http://127.0.0.1:3100");
+    expect(body.auto).toBe(false);
     const beats = body.lesson.parts[0].beats;
     // The empty beat is dropped; the unknown item type never reaches the recorder.
     expect(beats).toHaveLength(1);
@@ -40,6 +41,11 @@ describe("starting a lesson video", () => {
     // The voice reads maths as words, not "dollar x caret 2".
     expect(beats[0].speech).not.toContain("$");
     expect(beats[0].speech).toMatch(/^The area is x/);
+  });
+
+  it("marks a video the app started on its own", async () => {
+    await post({ title: "T", language: "english", parts: [{ title: "P", beats: [{ say: "Hi", draw: [] }] }], auto: true });
+    expect((sent[0].body as { auto: boolean }).auto).toBe(true);
   });
 
   it("refuses a lesson with nothing to record", async () => {

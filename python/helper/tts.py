@@ -14,6 +14,7 @@ import threading
 import time
 import urllib.request
 import wave
+from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
@@ -137,11 +138,35 @@ def state() -> dict:
     }
 
 
+def voice_for(language: str) -> tuple[str, str]:
+    """(Kokoro voice, phoneme language) for a lesson language."""
+    voice, lang = VOICES.get(language, VOICES["english"])
+    return (voice if language == "hindi" else os.environ.get("PY_TTS_VOICE", voice)), lang
+
+
+_live = {"n": 0}
+_live_lock = threading.Lock()
+
+
+@contextmanager
+def live():
+    """Marks speech a lesson is waiting for right now (background videos give way to it)."""
+    with _live_lock:
+        _live["n"] += 1
+    try:
+        yield
+    finally:
+        with _live_lock:
+            _live["n"] -= 1
+
+
+def live_busy() -> bool:
+    return _live["n"] > 0
+
+
 def synthesize(text: str, language: str = "english", speed: float = 1.0) -> tuple[np.ndarray, int]:
     """Speech for one piece of narration: float samples in [-1, 1] and the sample rate."""
-    voice, lang = VOICES.get(language, VOICES["english"])
-    if language != "hindi":
-        voice = os.environ.get("PY_TTS_VOICE", voice)
+    voice, lang = voice_for(language)
     samples, rate = engine().create(text[:2000], voice=voice, speed=max(0.5, min(2.0, speed)), lang=lang)
     return np.asarray(samples, dtype=np.float32), rate
 

@@ -22,4 +22,5 @@ logs/
 # the Python helper's environment (recreated by uv)
 python/.venv/
 python/models/
+python/videos/
 __pycache__/

@@ -11,9 +11,15 @@ const Body = z.object({
     .array(z.object({ title: z.string().max(200), beats: z.array(z.unknown()).max(60) }))
     .min(1)
     .max(60),
+  /** Started by the app as soon as the lesson was written (so Download is instant later), not by a click. */
+  auto: z.boolean().optional(),
 });
 
-/** Start making an MP4 of a written lesson; the client polls /api/video/<job> for progress. */
+/**
+ * A video of a written lesson: already made (the helper keeps them, keyed by
+ * the lesson's content), already being made, or started now. The client polls
+ * /api/video/<job> for progress.
+ */
 export async function POST(req: Request) {
   const limited = rateLimit(req, "video", 6);
   if (limited) return limited;
@@ -36,7 +42,7 @@ export async function POST(req: Request) {
     return await helperVideo("/video/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lesson: { title: cleanText(body.title, 200), language: body.language, parts }, appUrl }),
+      body: JSON.stringify({ lesson: { title: cleanText(body.title, 200), language: body.language, parts }, appUrl, auto: body.auto === true }),
     });
   } catch (err) {
     return errorResponse(err);

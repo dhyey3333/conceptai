@@ -41,6 +41,42 @@ def test_videos_are_only_recorded_from_this_computer():
     assert client.get("/video/" + "f" * 16).status_code == 404
 
 
+def _lesson(say: str = "Hi") -> dict:
+    return {"title": "T", "language": "english", "parts": [{"title": "P", "beats": [{"say": say, "speech": say, "draw": [], "point": None}]}]}
+
+
+@pytest.fixture
+def no_making(monkeypatch, tmp_path):
+    """Jobs are queued but never made, and the video library is a temporary folder."""
+    monkeypatch.setattr(video, "_run", lambda job: None)
+    monkeypatch.setattr(video, "VIDEOS", tmp_path)
+    monkeypatch.setattr(video, "_jobs", {})
+    return tmp_path
+
+
+def test_a_lesson_already_made_is_ready_at_once(no_making):
+    lesson = _lesson()
+    (no_making / f"{video.content_key(lesson)}.mp4").write_bytes(b"mp4")
+    job = video.start(lesson, "http://127.0.0.1:3100", auto=True)
+    assert job.state == "done" and job.file.read_bytes() == b"mp4" and job.download_name() == "T.mp4"
+
+
+def test_asking_again_while_it_is_made_joins_the_same_video(no_making):
+    first = video.start(_lesson(), "http://127.0.0.1:3100", auto=True)
+    again = video.start(_lesson(), "http://127.0.0.1:3100")
+    assert again.id == first.id and not again.auto  # a person is waiting for it now
+    assert video.start(_lesson("Changed"), "http://127.0.0.1:3100").id != first.id
+
+
+def test_only_a_few_background_videos_queue_at_once(no_making):
+    for i in range(video.MAX_AUTO_WAITING):
+        video.start(_lesson(f"Lesson {i}"), "http://127.0.0.1:3100", auto=True)
+    with pytest.raises(video.Busy):
+        video.start(_lesson("One more"), "http://127.0.0.1:3100", auto=True)
+    # A click is never refused.
+    assert video.start(_lesson("One more"), "http://127.0.0.1:3100").state == "waiting"
+
+
 @pytest.mark.skipif(not tts.installed(), reason="the offline voice isn't downloaded")
 def test_the_offline_voice_speaks():
     r = client.post("/tts", json={"text": "Hello, this is your teacher.", "language": "english"})

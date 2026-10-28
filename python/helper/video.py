@@ -11,12 +11,19 @@ A job has four steps:
    that moment in one narration track.
 4. Encoding: ffmpeg puts video and narration together in an MP4.
 
-Recording runs in real time (a 10-minute lesson takes about 10 minutes), one
-video at a time. Jobs and their files are removed after an hour.
+Recording runs in real time (a 10-minute lesson takes about 10 minutes), so
+the app starts a lesson's video by itself as soon as the lesson is written
+("auto"), and a click on Download later finds it ready. Finished videos are
+kept in python/videos/ (the newest 40), named by a hash of the lesson's
+content: asking again for the same lesson is instant, and a changed lesson
+gets a new video. One video is made at a time, a second request for one being
+made joins it, and a background video gives way to the lesson's own voice.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import shutil
 import subprocess
@@ -35,7 +42,11 @@ FPS = 30
 SIZE = (1280, 720)
 LEAD_MS = 1500  # the title card before the first beat
 TAIL_MS = 2000  # the last board stays up a moment
-KEEP_S = 3600
+KEEP_S = 3600  # finished or failed jobs are forgotten after an hour (their videos stay in VIDEOS)
+VIDEOS = Path(__file__).resolve().parent.parent / "videos"
+KEEP_VIDEOS = 40
+VERSION = 1  # part of every video's key: bump when the video's look changes, so old ones are remade
+MAX_AUTO_WAITING = 2  # background videos queued at once; more are refused (the app asks again later)
 APP_URL = re.compile(r"^http://(127\.0\.0\.1|localhost):\d{2,5}$")
 
 
@@ -50,7 +61,9 @@ class Job:
     total: int = 0
     error: str | None = None
     durations: list[list[int]] = field(default_factory=list)
-    dir: Path = field(default_factory=lambda: Path(tempfile.mkdtemp(prefix="conceptai-video-")))
+    key: str = ""
+    auto: bool = False
+    dir: Path | None = None  # working files while it is made
     file: Path | None = None
     length_ms: int = 0
     recorded_ms: int = 0
@@ -68,6 +81,14 @@ class Job:
             "voiceDownload": None if tts.installed() else tts.state()["progress"],
         }
 
+    def download_name(self) -> str:
+        safe = re.sub(r"[^A-Za-z0-9 _-]+", "", self.lesson["title"]).strip()[:60] or "lesson"
+        return f"{safe}.mp4"
+
+
+class Busy(Exception):
+    """Too many background videos already waiting."""
+
 
 _jobs: dict[str, Job] = {}
 _one_at_a_time = threading.Lock()
@@ -76,16 +97,41 @@ _one_at_a_time = threading.Lock()
 def _cleanup() -> None:
     for jid, job in list(_jobs.items()):
         if time.time() - job.created > KEEP_S and job.state in ("done", "error"):
-            shutil.rmtree(job.dir, ignore_errors=True)
             _jobs.pop(jid, None)
 
 
-def start(lesson: dict, app_url: str) -> Job:
-    """Queue a video of `lesson` ({title, language, parts:[{title, beats:[{say, speech, draw, point}]}]})."""
+def content_key(lesson: dict) -> str:
+    """Same lesson content, same voice, same look: same video."""
+    language = lesson.get("language", "english")
+    what = {
+        "v": VERSION,
+        "title": lesson["title"],
+        "language": language,
+        "voice": tts.voice_for(language)[0],
+        "parts": [{"title": p["title"], "beats": [{k: b.get(k) for k in ("say", "speech", "draw", "point")} for b in p["beats"]]} for p in lesson["parts"]],
+    }
+    return hashlib.sha256(json.dumps(what, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:32]
+
+
+def start(lesson: dict, app_url: str, auto: bool = False) -> Job:
+    """A video of `lesson` ({title, language, parts:[{title, beats:[{say, speech, draw, point}]}]}): already made, being made, or queued now."""
     if not APP_URL.match(app_url):
         raise ValueError("the app must be on this computer")
     _cleanup()
-    job = Job(id=uuid.uuid4().hex[:16], lesson=lesson, app_url=app_url)
+    key = content_key(lesson)
+    made = VIDEOS / f"{key}.mp4"
+    if made.exists():
+        made.touch()  # recently wanted: kept longest
+        job = Job(id=uuid.uuid4().hex[:16], lesson=lesson, app_url=app_url, key=key, state="done", done=1, total=1, file=made)
+        _jobs[job.id] = job
+        return job
+    for job in _jobs.values():
+        if job.key == key and job.state != "error":
+            job.auto = job.auto and auto  # a person is waiting for it now
+            return job
+    if auto and sum(1 for j in _jobs.values() if j.auto and j.state == "waiting") >= MAX_AUTO_WAITING:
+        raise Busy()
+    job = Job(id=uuid.uuid4().hex[:16], lesson=lesson, app_url=app_url, key=key, auto=auto)
     job.total = sum(len(p["beats"]) for p in lesson["parts"])
     _jobs[job.id] = job
     threading.Thread(target=_run, args=(job,), daemon=True).start()
@@ -104,14 +150,25 @@ def render_data(job: Job) -> dict:
 
 def _run(job: Job) -> None:
     with _one_at_a_time:
+        job.dir = Path(tempfile.mkdtemp(prefix="conceptai-video-"))
         try:
             clips = _voice(job)
             starts, t0, frames = _record(job)
             job.state, job.done, job.total = "encoding", 0, 1
             job.file = _encode(job, clips, starts, t0, frames)
             job.state = "done"
+            _prune()
         except Exception as e:
             job.state, job.error = "error", f"{type(e).__name__}: {e}"[:400]
+        finally:
+            shutil.rmtree(job.dir, ignore_errors=True)
+
+
+def _prune() -> None:
+    """Keep the newest KEEP_VIDEOS videos (a video used again counts as new)."""
+    videos = sorted(VIDEOS.glob("*.mp4"), key=lambda f: f.stat().st_mtime, reverse=True)
+    for old in videos[KEEP_VIDEOS:]:
+        old.unlink(missing_ok=True)
 
 
 def _voice(job: Job) -> list[tuple[np.ndarray, int] | None]:
@@ -122,6 +179,9 @@ def _voice(job: Job) -> list[tuple[np.ndarray, int] | None]:
         lengths = []
         for beat in part["beats"]:
             text = (beat.get("speech") or "").strip()
+            # A background video waits while the lesson being watched needs its voice.
+            while job.auto and tts.live_busy():
+                time.sleep(0.2)
             clip = tts.synthesize(text, language) if text else None
             clips.append(clip)
             lengths.append(round(len(clip[0]) / clip[1] * 1000) if clip else 0)
@@ -228,8 +288,7 @@ def _encode(job: Job, clips: list, starts: list[float | None], t0: float, frames
     track, rate = narration_track(clips, starts, t0, frames / FPS)
     narration = job.dir / "narration.wav"
     narration.write_bytes(tts.to_wav(track, rate))
-    safe = re.sub(r"[^A-Za-z0-9 _-]+", "", job.lesson["title"]).strip()[:60] or "lesson"
-    out = job.dir / f"{safe}.mp4"
+    out = job.dir / "lesson.mp4"
     done = subprocess.run(
         [_ffmpeg(), "-y", "-loglevel", "error", "-i", str(job.dir / "video.mp4"), "-i", str(narration),
          "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "128k", "-shortest", "-movflags", "+faststart", str(out)],
@@ -237,8 +296,11 @@ def _encode(job: Job, clips: list, starts: list[float | None], t0: float, frames
     )
     if done.returncode != 0:
         raise RuntimeError(f"ffmpeg: {done.stderr.decode(errors='replace')[-300:]}")
+    VIDEOS.mkdir(parents=True, exist_ok=True)
+    kept = VIDEOS / f"{job.key}.mp4"
+    shutil.move(str(out), kept)  # only a finished video ever has this name
     job.done = 1
-    return out
+    return kept
 
 
 def _ffmpeg() -> str:
